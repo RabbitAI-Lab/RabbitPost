@@ -1,0 +1,50 @@
+{
+  "name": "@rabbitpost/api",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/api/src",
+  "targets": {
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm dev",
+        "cwd": "apps/api"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm build",
+        "cwd": "apps/api"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm typecheck",
+        "cwd": "apps/api"
+      }
+    },
+    "db:up": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm db:up",
+        "cwd": "apps/api"
+      }
+    },
+    "db:push": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm db:push",
+        "cwd": "apps/api"
+      }
+    },
+    "db:generate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm db:generate",
+        "cwd": "apps/api"
+      }
+    }
+  }
+}

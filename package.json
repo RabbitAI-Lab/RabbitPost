@@ -1,0 +1,34 @@
+{
+  "name": "rabbitpost",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RabbitPost - a Postman-like API collaboration platform (monorepo)",
+  "packageManager": "pnpm@10.32.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "nx run-many -t dev --projects=@rabbitpost/web,@rabbitpost/api --parallel",
+    "dev:web": "nx dev @rabbitpost/web",
+    "dev:api": "nx dev @rabbitpost/api",
+    "build": "nx run-many -t build --all",
+    "typecheck": "nx run-many -t typecheck --all",
+    "db:up": "nx db:up @rabbitpost/api",
+    "db:push": "nx db:push @rabbitpost/api"
+  },
+  "devDependencies": {
+    "nx": "latest",
+    "typescript": "~5.8.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@embedded-postgres/darwin-arm64",
+      "@embedded-postgres/linux-arm64",
+      "@embedded-postgres/linux-x64",
+      "@embedded-postgres/win32-x64",
+      "esbuild",
+      "nx",
+      "sharp"
+    ]
+  }
+}

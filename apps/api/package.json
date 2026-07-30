@@ -1,0 +1,39 @@
+{
+  "name": "@rabbitpost/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 4000",
+    "build": "next build",
+    "start": "next start -p 4000",
+    "typecheck": "tsc --noEmit",
+    "db:up": "tsx scripts/dev-db.ts",
+    "db:seed-demo": "tsx scripts/seed-demo-collection.ts",
+    "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@rabbitpost/shared": "workspace:*",
+    "dotenv": "latest",
+    "drizzle-orm": "latest",
+    "embedded-postgres": "latest",
+    "jsonwebtoken": "latest",
+    "next": "latest",
+    "pg": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "yaml": "^2.9.0",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "latest",
+    "@types/node": "latest",
+    "@types/pg": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "drizzle-kit": "latest",
+    "tsx": "latest",
+    "typescript": "~5.8.0"
+  }
+}

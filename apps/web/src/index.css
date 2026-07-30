@@ -1,0 +1,253 @@
+html,
+body,
+#root,
+.ant-app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* 响应体 / 脚本编辑区域使用等宽字体 */
+.code-font,
+.code-font textarea,
+.code-font pre {
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+/* code-font 用在单行 input（如 URL 框）时：字号（12px）高于紧凑主题基准，
+   继承的无单位 line-height(1.8) 会把控件撑到 31.6px，与同行 28px 按钮错位重叠；
+   收紧为 1.5（12×1.5+4×2+2=28）保持 Space.Compact 内等高对齐 */
+input.ant-input.code-font {
+  line-height: 1.5;
+}
+
+/* 请求编辑区：让 Tabs 内容撑满剩余高度（编辑器根节点随之 100%）；antd 6 结构为 body-holder > body > content */
+.request-tabs > .ant-tabs-body-holder,
+.collection-editor-tabs > .ant-tabs-body-holder {
+  min-height: 0;
+}
+.request-tabs > .ant-tabs-body-holder > .ant-tabs-body,
+.request-tabs > .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content,
+.collection-editor-tabs > .ant-tabs-body-holder > .ant-tabs-body,
+.collection-editor-tabs > .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content {
+  height: 100%;
+}
+
+/* 请求/响应分栏内的 Tabs：tab 栏固定，内容区自身滚动（antd 6 结构 body-holder > body > content） */
+.pane-tabs {
+  height: 100%;
+}
+.pane-tabs > .ant-tabs-body-holder {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.pane-tabs > .ant-tabs-body-holder > .ant-tabs-body,
+.pane-tabs > .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content {
+  height: 100%;
+}
+
+/* Scripts 子页（左侧 Pre-request / Tests）：脚本 textarea 撑满可用高度 */
+.scripts-tabs {
+  height: 100%;
+}
+.scripts-tabs > .ant-tabs-body-holder > .ant-tabs-body,
+.scripts-tabs > .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content {
+  height: 100%;
+}
+
+/* 请求 Tab：默认宽 170px（--rp-tab-width 由 RequestTabs 按可用空间动态计算），最小 75px，标题居中 */
+.request-tabs > .ant-tabs-nav .ant-tabs-tab {
+  flex: none;
+  width: var(--rp-tab-width, 170px);
+  min-width: 75px;
+  position: relative;
+}
+.request-tabs > .ant-tabs-nav .ant-tabs-tab .ant-tabs-tab-btn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  position: relative;
+}
+.request-tab-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 新建按钮不随 tab 收缩 */
+.request-tabs .ant-tabs-nav-list .ant-tabs-nav-add {
+  flex: none;
+}
+
+/* 未保存修改：右侧胡萝卜橙圆点，悬浮在标题上层不占位；hover 时让位给关闭按钮 */
+.request-tab-dirty-dot {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff6c37;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.request-tabs .ant-tabs-tab:hover .request-tab-dirty-dot {
+  opacity: 0;
+}
+
+/* Body raw 语言下拉：胡萝卜橙高亮，便于发现 */
+.raw-lang-select .ant-select-selection-item,
+.raw-lang-select .ant-select-arrow {
+  color: #ff6c37;
+}
+
+/* 关闭按钮：悬浮在标题上层（不占布局空间），仅 hover/键盘聚焦时显示 */
+.request-tabs .ant-tabs-tab .ant-tabs-tab-remove {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  border-radius: 4px;
+  /* 趴在文字上时用 tab 自身背景垫底，保证可读 */
+  background-color: inherit;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.request-tabs .ant-tabs-tab:hover .ant-tabs-tab-remove,
+.request-tabs .ant-tabs-tab .ant-tabs-tab-remove:focus-visible {
+  opacity: 1;
+}
+.request-tabs .ant-tabs-tab .ant-tabs-tab-remove:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+/* 侧栏菜单项 hover（选中项由内联样式控制背景，不受影响） */
+.sidebar-hover:hover {
+  background: #f5f5f5;
+}
+
+/* 下拉浮层与白底页面区分：增加描边并加深阴影，避免融为一体 */
+.ant-dropdown-menu,
+.ant-select-dropdown,
+.ant-cascader-menus,
+.popup-panel {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.12),
+    0 3px 6px -4px rgba(0, 0, 0, 0.18),
+    0 9px 28px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* 自定义下拉浮层（popupRender 自绘内容）：需自带白底与圆角 */
+.popup-panel {
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 侧边栏紧凑滚动条 */
+.slim-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.slim-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+/* Collections 树（react-arborist）：VS Code 风格文件树 */
+.tree-row {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-right: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.tree-row:hover {
+  background: #ececec;
+}
+/* 选中态（点击或新建后自动选中） */
+.tree-row-selected,
+.tree-row-selected:hover {
+  background: #e2ecf7;
+}
+/* 缩进参考线：每级 12px，行高内连续 */
+.tree-indent-guide {
+  flex-shrink: 0;
+  width: 12px;
+  align-self: stretch;
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  margin-right: -4px;
+  transform: translateX(-4px);
+}
+/* chevron 固定占位，叶子节点留空保持对齐 */
+.tree-chevron {
+  flex-shrink: 0;
+  width: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* 行尾 more / 新建请求 + 按钮：仅 hover 该行时显示，保留占位避免抖动 */
+.tree-more-btn,
+.tree-plus-btn {
+  opacity: 0;
+  flex-shrink: 0;
+  height: 22px;
+  min-width: 22px;
+  transition: opacity 0.15s;
+}
+.tree-row:hover .tree-more-btn,
+.tree-row:hover .tree-plus-btn {
+  opacity: 1;
+}
+
+/* Collection 收藏星：仅 hover 该行时显示；已收藏常驻显示金色实心星 */
+.tree-star-btn {
+  opacity: 0;
+  flex-shrink: 0;
+  height: 22px;
+  min-width: 22px;
+  transition: opacity 0.15s;
+}
+.tree-row:hover .tree-star-btn,
+.tree-star-btn.tree-star-btn-active,
+.tree-star-btn:focus-visible {
+  opacity: 1;
+}
+
+/* Cherry Markdown 编辑器（通用封装）：去默认阴影，改用细边框融入面板 */
+.md-cherry .cherry {
+  height: 100%;
+  box-shadow: none;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+
+/* spec 定义编辑器（CodeMirror）：撑满分栏高度，字号与其它代码区域一致 */
+.spec-cm .cm-editor {
+  height: 100%;
+}
+.spec-cm .cm-scroller {
+  font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.spec-cm .cm-editor.cm-focused {
+  outline: none;
+}
