@@ -2,6 +2,7 @@ import { DeleteOutlined } from "@ant-design/icons";
 import { Button, Checkbox, Input, Select, Table, Upload } from "antd";
 import { useState } from "react";
 import type { KeyValueItem } from "@rabbitpost/shared";
+import VarInput from "./variable/VarInput";
 
 let seq = 0;
 export function newKvItem(partial?: Partial<KeyValueItem>): KeyValueItem {
@@ -30,6 +31,8 @@ interface Props {
   showDescription?: boolean;
   /** form-data 场景：Key 末尾显示 text/file 类型下拉，file 时 Value 列变为文件选择 */
   showKeyType?: boolean;
+  /** Key / Value 输入框开启 {{var}} 变量高亮（环境变量定义处不应开启） */
+  highlightVars?: boolean;
 }
 
 /** Postman 风格 Key-Value 表格编辑器：末行自动追加空行 */
@@ -44,6 +47,7 @@ export default function KeyValueEditor({
   showSecret = false,
   showDescription = false,
   showKeyType = false,
+  highlightVars = false,
 }: Props) {
   // 草稿行预先持有真实 id：提交时沿用该 id，保证 rowKey 不变、Input 不重建、焦点不丢
   const [draftId, setDraftId] = useState(() => newKvItem().id);
@@ -78,40 +82,51 @@ export default function KeyValueEditor({
     {
       title: keyTitle ?? keyPlaceholder,
       dataIndex: "key",
-      render: (_: unknown, row: KeyValueItem) => (
-        <Input
-          size="small"
-          variant="filled"
-          value={row.key}
-          placeholder={
-            row.id === draftId ? (draftKeyPlaceholder ?? keyPlaceholder) : keyPlaceholder
-          }
-          onChange={(e) => update(row.id, { key: e.target.value })}
-          suffix={
-            showKeyType ? (
-              <Select
-                size="small"
-                variant="borderless"
-                value={row.type ?? "text"}
-                style={{ width: 66, marginRight: -7 }}
-                options={[
-                  { value: "text", label: "Text" },
-                  { value: "file", label: "File" },
-                ]}
-                onChange={(type) =>
-                  // 切回 text 时清空已选文件；切到 file 时清空文本值
-                  update(
-                    row.id,
-                    type === "text"
-                      ? { type, fileBase64: undefined, fileName: undefined }
-                      : { type, value: "" },
-                  )
-                }
-              />
-            ) : undefined
-          }
-        />
-      ),
+      render: (_: unknown, row: KeyValueItem) => {
+        const placeholder =
+          row.id === draftId ? (draftKeyPlaceholder ?? keyPlaceholder) : keyPlaceholder;
+        const setKey = (v: string) => update(row.id, { key: v });
+        const suffix = showKeyType ? (
+          <Select
+            size="small"
+            variant="borderless"
+            value={row.type ?? "text"}
+            style={{ width: 66, marginRight: -7 }}
+            options={[
+              { value: "text", label: "Text" },
+              { value: "file", label: "File" },
+            ]}
+            onChange={(type) =>
+              // 切回 text 时清空已选文件；切到 file 时清空文本值
+              update(
+                row.id,
+                type === "text"
+                  ? { type, fileBase64: undefined, fileName: undefined }
+                  : { type, value: "" },
+              )
+            }
+          />
+        ) : undefined;
+        return highlightVars ? (
+          <VarInput
+            size="small"
+            variant="filled"
+            value={row.key}
+            placeholder={placeholder}
+            onChange={setKey}
+            suffix={suffix}
+          />
+        ) : (
+          <Input
+            size="small"
+            variant="filled"
+            value={row.key}
+            placeholder={placeholder}
+            onChange={(e) => setKey(e.target.value)}
+            suffix={suffix}
+          />
+        );
+      },
     },
     {
       title: valueTitle ?? valuePlaceholder,
@@ -134,6 +149,14 @@ export default function KeyValueEditor({
           >
             <Button size="small">{row.fileName ?? "Select File"}</Button>
           </Upload>
+        ) : highlightVars ? (
+          <VarInput
+            size="small"
+            variant="filled"
+            value={row.value}
+            placeholder={valuePlaceholder}
+            onChange={(v) => update(row.id, { value: v })}
+          />
         ) : (
           <Input
             size="small"

@@ -21,10 +21,10 @@ import {
 } from "../../stores/cookies";
 import { isTabDirty, useTabsStore, type RequestTab } from "../../stores/tabs";
 import { newKvItem } from "../common/KeyValueEditor";
+import VarInput from "../common/variable/VarInput";
 import RequestConfigTabs from "./RequestConfigTabs";
 import RequestTitleBar from "./RequestTitleBar";
 import ResponseViewer from "./ResponseViewer";
-import UrlInput from "./UrlInput";
 
 interface Props {
   tab: RequestTab;
@@ -219,7 +219,8 @@ export default function RequestEditor({ tab }: Props) {
           options={HTTP_METHODS.map((m) => ({ value: m, label: m }))}
           onChange={(method) => patch(tab.key, { method })}
         />
-        <UrlInput
+        <VarInput
+          className="code-font"
           style={{ flex: 1, minWidth: 0 }}
           placeholder="https://api.example.com/users/{{userId}}"
           value={tab.config.url}

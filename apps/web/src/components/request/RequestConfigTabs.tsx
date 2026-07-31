@@ -24,6 +24,7 @@ import { isAuthConfigured } from "@rabbitpost/shared";
 import { useTabsStore, type RequestTab } from "../../stores/tabs";
 import KeyValueEditor, { newKvItem } from "../common/KeyValueEditor";
 import MarkdownEditor from "../common/MarkdownEditor";
+import VarTextArea from "../common/variable/VarTextArea";
 import AuthEditor from "./AuthEditor";
 import CookieManagerModal from "./CookieManagerModal";
 import RequestSettingsEditor from "./RequestSettingsEditor";
@@ -178,13 +179,12 @@ function BulkKvSection({
         </Button>
       </div>
       {bulk ? (
-        <Input.TextArea
+        <VarTextArea
           className="code-font"
           autoSize={{ minRows: 8, maxRows: 24 }}
           value={bulkText}
           placeholder='[{"key": "page", "value": "1", "description": "页码"}]'
-          onChange={(e) => {
-            const text = e.target.value;
+          onChange={(text) => {
             setBulkText(text);
             // JSON 合法时实时同步回列表
             try {
@@ -195,7 +195,7 @@ function BulkKvSection({
           }}
         />
       ) : (
-        <KeyValueEditor items={items} onChange={onChange} showDescription />
+        <KeyValueEditor items={items} onChange={onChange} showDescription highlightVars />
       )}
     </div>
   );
@@ -243,13 +243,12 @@ export default function RequestConfigTabs({ tab }: Props) {
 
   /** form-data / urlencoded 共用的 Bulk 编辑 textarea */
   const bodyBulkTextArea = (
-    <Input.TextArea
+    <VarTextArea
       className="code-font"
       autoSize={{ minRows: 8, maxRows: 24 }}
       value={bodyBulkText}
       placeholder='[{"key": "name", "value": "rabbit", "description": "名称"}]'
-      onChange={(e) => {
-        const text = e.target.value;
+      onChange={(text) => {
         setBodyBulkText(text);
         // JSON 合法时实时同步回列表
         try {
@@ -482,14 +481,14 @@ export default function RequestConfigTabs({ tab }: Props) {
               </div>
 
               {tab.config.body.type === "raw" && (
-                <Input.TextArea
+                <VarTextArea
                   className="code-font"
                   autoSize={{ minRows: 8, maxRows: 24 }}
                   placeholder='{"key": "value"}'
                   value={tab.config.body.raw ?? ""}
-                  onChange={(e) =>
+                  onChange={(raw) =>
                     patch(tab.key, {
-                      body: { ...tab.config.body, raw: e.target.value },
+                      body: { ...tab.config.body, raw },
                     })
                   }
                 />
@@ -504,6 +503,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                       patch(tab.key, { body: { ...tab.config.body, urlencoded } })
                     }
                     showDescription
+                    highlightVars
                   />
                 ))}
               {tab.config.body.type === "form-data" &&
@@ -517,6 +517,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                     }
                     showDescription
                     showKeyType
+                    highlightVars
                   />
                 ))}
               {tab.config.body.type === "binary" && (
@@ -573,14 +574,14 @@ export default function RequestConfigTabs({ tab }: Props) {
                     >
                       Query
                     </Typography.Text>
-                    <Input.TextArea
+                    <VarTextArea
                       className="code-font"
                       autoSize={{ minRows: 10, maxRows: 24 }}
                       placeholder={"query {\n  field\n}"}
                       value={tab.config.body.graphqlQuery ?? ""}
-                      onChange={(e) =>
+                      onChange={(graphqlQuery) =>
                         patch(tab.key, {
-                          body: { ...tab.config.body, graphqlQuery: e.target.value },
+                          body: { ...tab.config.body, graphqlQuery },
                         })
                       }
                     />
@@ -592,16 +593,16 @@ export default function RequestConfigTabs({ tab }: Props) {
                     >
                       GraphQL Variables
                     </Typography.Text>
-                    <Input.TextArea
+                    <VarTextArea
                       className="code-font"
                       autoSize={{ minRows: 10, maxRows: 24 }}
                       placeholder='{"id": 1}'
                       value={tab.config.body.graphqlVariables ?? ""}
-                      onChange={(e) =>
+                      onChange={(graphqlVariables) =>
                         patch(tab.key, {
                           body: {
                             ...tab.config.body,
-                            graphqlVariables: e.target.value,
+                            graphqlVariables,
                           },
                         })
                       }
@@ -639,17 +640,30 @@ export default function RequestConfigTabs({ tab }: Props) {
                   label: "Pre-request",
                   children: (
                     <div style={{ display: "flex", gap: 12, height: "100%" }}>
-                      <Input.TextArea
-                        className="code-font"
-                        style={{ flex: 1, minWidth: 0, resize: "none" }}
-                        placeholder={'rp.environment.set("ts", Date.now());'}
-                        value={tab.config.scripts.preRequest ?? ""}
-                        onChange={(e) =>
-                          patch(tab.key, {
-                            scripts: { ...tab.config.scripts, preRequest: e.target.value },
-                          })
-                        }
-                      />
+                      <div
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                        }}
+                      >
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {'脚本中请用 rp.environment.get("varName") 读写变量，{{}} 不会被替换'}
+                        </Typography.Text>
+                        <Input.TextArea
+                          className="code-font"
+                          style={{ flex: 1, minWidth: 0, resize: "none" }}
+                          placeholder={'rp.environment.set("ts", Date.now());'}
+                          value={tab.config.scripts.preRequest ?? ""}
+                          onChange={(e) =>
+                            patch(tab.key, {
+                              scripts: { ...tab.config.scripts, preRequest: e.target.value },
+                            })
+                          }
+                        />
+                      </div>
                       <ScriptSnippets
                         phase="pre-request"
                         onInsert={(code) => appendScript("preRequest", code)}
@@ -662,19 +676,32 @@ export default function RequestConfigTabs({ tab }: Props) {
                   label: "Tests",
                   children: (
                     <div style={{ display: "flex", gap: 12, height: "100%" }}>
-                      <Input.TextArea
-                        className="code-font"
-                        style={{ flex: 1, minWidth: 0, resize: "none" }}
-                        placeholder={
-                          'rp.test("status is 200", () => {\n  rp.response.to.have.status(200);\n});'
-                        }
-                        value={tab.config.scripts.test ?? ""}
-                        onChange={(e) =>
-                          patch(tab.key, {
-                            scripts: { ...tab.config.scripts, test: e.target.value },
-                          })
-                        }
-                      />
+                      <div
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                        }}
+                      >
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {'脚本中请用 rp.environment.get("varName") 读写变量，{{}} 不会被替换'}
+                        </Typography.Text>
+                        <Input.TextArea
+                          className="code-font"
+                          style={{ flex: 1, minWidth: 0, resize: "none" }}
+                          placeholder={
+                            'rp.test("status is 200", () => {\n  rp.response.to.have.status(200);\n});'
+                          }
+                          value={tab.config.scripts.test ?? ""}
+                          onChange={(e) =>
+                            patch(tab.key, {
+                              scripts: { ...tab.config.scripts, test: e.target.value },
+                            })
+                          }
+                        />
+                      </div>
                       <ScriptSnippets
                         phase="test"
                         onInsert={(code) => appendScript("test", code)}

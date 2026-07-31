@@ -12,6 +12,8 @@ import {
   type AuthType,
   type RequestAuth,
 } from "@rabbitpost/shared";
+import VarInput from "../common/variable/VarInput";
+import VarTextArea from "../common/variable/VarTextArea";
 
 /** auth 中承载各类型配置的字段名（排除 type 与已废弃的扁平字段） */
 type SectionKey =
@@ -527,7 +529,7 @@ export default function AuthEditor({ value, onChange }: Props) {
   );
 }
 
-/** 单个字段行：左标签、右控件 */
+/** 单个字段行：左标签、右控件（text / textarea 支持 {{var}} 高亮；密码框为掩码文本不做高亮） */
 function FieldRow({ field }: { field: FieldSpec }) {
   let control: ReactNode;
   switch (field.kind) {
@@ -543,12 +545,12 @@ function FieldRow({ field }: { field: FieldSpec }) {
       break;
     case "textarea":
       control = (
-        <Input.TextArea
+        <VarTextArea
           className="code-font"
           autoSize={{ minRows: 4, maxRows: 12 }}
           placeholder={field.placeholder}
           value={field.value}
-          onChange={(e) => field.onChange(e.target.value)}
+          onChange={field.onChange}
         />
       );
       break;
@@ -577,11 +579,11 @@ function FieldRow({ field }: { field: FieldSpec }) {
       break;
     default:
       control = (
-        <Input
+        <VarInput
           size="small"
           placeholder={field.placeholder}
           value={field.value}
-          onChange={(e) => field.onChange(e.target.value)}
+          onChange={field.onChange}
         />
       );
   }
