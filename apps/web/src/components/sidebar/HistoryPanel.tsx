@@ -109,7 +109,7 @@ export default function HistoryPanel() {
                   padding: "6px 4px",
                   borderRadius: 4,
                 }}
-                onClick={() => openFromHistory(entry.name ?? "", entry.request)}
+                onClick={() => openFromHistory(entry)}
               >
                 <Tag
                   color={METHOD_COLORS[entry.request.method] ?? "default"}

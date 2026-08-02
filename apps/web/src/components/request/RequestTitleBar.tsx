@@ -1,5 +1,6 @@
 import {
   BlockOutlined,
+  ExperimentOutlined,
   GlobalOutlined,
   NodeIndexOutlined,
   RobotOutlined,
@@ -8,11 +9,11 @@ import {
   ThunderboltOutlined,
   WifiOutlined,
 } from "@ant-design/icons";
-import { Select, Tooltip, Typography } from "antd";
+import { Select, Tag, Tooltip, Typography } from "antd";
 import type { ReactNode } from "react";
 import type { RequestProtocol } from "@rabbitpost/shared";
 import { REQUEST_PROTOCOLS } from "@rabbitpost/shared";
-import { findFolderTrail } from "../../lib/tree";
+import { findFolderTrail, findNodeName } from "../../lib/tree";
 import { useAppStore } from "../../stores/app";
 import { useTabsStore, type RequestTab } from "../../stores/tabs";
 
@@ -41,9 +42,12 @@ export default function RequestTitleBar({ tab, extra }: Props) {
 
   const protocol: RequestProtocol = tab.config.protocol ?? "http";
   const saved = tab.itemId !== null;
+  // 用例 tab：徽章 + 面包屑追加所属接口名（Collection > … > 接口 / 用例）
+  const isCase = !!tab.caseId;
 
   // 目录路径：Collection 名 + 祖先文件夹名（仅已保存的请求有）
   let pathSegments: string[] = [];
+  let requestName: string | null = null;
   if (tab.itemId && tab.collectionId) {
     const collectionName = collections.find((c) => c.id === tab.collectionId)?.name;
     const trail = findFolderTrail(
@@ -51,6 +55,9 @@ export default function RequestTitleBar({ tab, extra }: Props) {
       tab.itemId,
     );
     pathSegments = [...(collectionName ? [collectionName] : []), ...(trail ?? [])];
+    if (isCase) {
+      requestName = findNodeName(collectionTrees[tab.collectionId] ?? [], tab.itemId);
+    }
   }
 
   return (
@@ -63,6 +70,15 @@ export default function RequestTitleBar({ tab, extra }: Props) {
         minWidth: 0,
       }}
     >
+      {isCase && (
+        <Tag
+          icon={<ExperimentOutlined />}
+          color="purple"
+          style={{ marginRight: 2, flexShrink: 0 }}
+        >
+          CASE
+        </Tag>
+      )}
       {saved ? (
         <Tooltip title={`${PROTOCOL_META[protocol].label}（保存后不可修改）`}>
           <span
@@ -126,6 +142,22 @@ export default function RequestTitleBar({ tab, extra }: Props) {
             </Typography.Text>
           </span>
         ))}
+        {isCase && requestName && (
+          <span
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, minWidth: 0 }}
+          >
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 12, whiteSpace: "nowrap" }}
+              ellipsis
+            >
+              {requestName}
+            </Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              /
+            </Typography.Text>
+          </span>
+        )}
         <Typography.Text strong style={{ fontSize: 13, whiteSpace: "nowrap" }} ellipsis>
           {tab.name}
         </Typography.Text>

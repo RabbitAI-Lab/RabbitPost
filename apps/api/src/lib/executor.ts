@@ -536,6 +536,12 @@ export async function executeRequest(
             statusText: result.statusText ?? "",
             sizeBytes: result.sizeBytes ?? 0,
             durationMs: result.durationMs ?? 0,
+            headers: result.headers,
+            bodyText: result.bodyText,
+            bodyBase64: result.bodyBase64,
+            cookies: result.cookies,
+            testResults: result.testResults,
+            consoleLogs: result.consoleLogs,
           }
         : null,
       error: result.ok ? null : (result.error ?? "unknown error"),

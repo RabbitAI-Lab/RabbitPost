@@ -1,17 +1,19 @@
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import type { ApiErr, ApiOk, TeamRole, User } from "@rabbitpost/shared";
+import type { ApiErr, ApiOk, OrgRole, TeamRole, User } from "@rabbitpost/shared";
 import { db } from "../db";
 import {
   collectionItems,
   collections,
   documentItems,
   environments,
+  organizationMembers,
+  requestCases,
   specs,
   teamMembers,
   workspaces,
 } from "../db/schema";
-import { getSessionUser } from "./auth";
+import { getApiKeyUser, getSessionUser } from "./auth";
 
 // ---------------------------------------------------------------------------
 // Response helpers
@@ -50,7 +52,8 @@ export function handleRoute<Ctx>(
 ): (req: Request, ctx: Ctx) => Promise<Response> {
   return async (req, ctx) => {
     try {
-      const user = await getSessionUser();
+      // 双凭证：Bearer API Key（CLI）优先，其次浏览器会话 cookie
+      const user = (await getApiKeyUser(req)) ?? (await getSessionUser());
       if (!user) return err(401, "UNAUTHORIZED", "Not signed in");
       return await handler(req, ctx, user);
     } catch (e) {
@@ -75,6 +78,33 @@ const ROLE_ORDER: Record<TeamRole, number> = {
   admin: 2,
   owner: 3,
 };
+
+const ORG_ROLE_ORDER: Record<OrgRole, number> = {
+  member: 0,
+  billing: 1,
+  admin: 2,
+  owner: 3,
+};
+
+/** 校验用户是企业成员，且角色不低于 minRole；返回实际角色 */
+export async function requireOrgRole(
+  orgId: string,
+  userId: string,
+  minRole: OrgRole = "member",
+): Promise<OrgRole> {
+  const [member] = await db
+    .select()
+    .from(organizationMembers)
+    .where(
+      and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
+    )
+    .limit(1);
+  if (!member) throw new HttpError(403, "FORBIDDEN", "Not an organization member");
+  if (ORG_ROLE_ORDER[member.role] < ORG_ROLE_ORDER[minRole]) {
+    throw new HttpError(403, "FORBIDDEN", `Requires org role >= ${minRole}`);
+  }
+  return member.role;
+}
 
 /** 校验用户是团队成员，且角色不低于 minRole；返回实际角色 */
 export async function requireTeamRole(
@@ -144,6 +174,22 @@ export async function requireItemRole(
     minRole,
   );
   return { collectionId: item.collectionId, workspaceId, role };
+}
+
+/** 通过 requestCaseId 级联校验权限（case → item → collection → workspace） */
+export async function requireCaseRole(
+  caseId: string,
+  userId: string,
+  minRole: TeamRole = "viewer",
+): Promise<{ itemId: string; collectionId: string; workspaceId: string; role: TeamRole }> {
+  const [row] = await db
+    .select()
+    .from(requestCases)
+    .where(eq(requestCases.id, caseId))
+    .limit(1);
+  if (!row) throw new HttpError(404, "NOT_FOUND", "Request case not found");
+  const rest = await requireItemRole(row.itemId, userId, minRole);
+  return { itemId: row.itemId, ...rest };
 }
 
 /** 通过 documentItemId 级联校验权限 */

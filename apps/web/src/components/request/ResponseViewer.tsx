@@ -108,7 +108,7 @@ function HistoryPane() {
         locale={{ emptyText: "暂无请求历史" }}
         onRow={(entry) => ({
           style: { cursor: "pointer" },
-          onClick: () => openFromHistory(entry.name ?? "", entry.request),
+          onClick: () => openFromHistory(entry),
         })}
         columns={[
           {

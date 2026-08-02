@@ -12,6 +12,7 @@ import {
   type FolderTab,
 } from "../../stores/tabs";
 import MarkdownEditor from "../common/MarkdownEditor";
+import CollectionRunsPanel from "./CollectionRunsPanel";
 
 interface Props {
   tab: CollectionTab | FolderTab;
@@ -37,6 +38,8 @@ export default function CollectionEditor({ tab }: Props) {
   const { updateDocDescription, markDocSaved, setSaving } = useTabsStore();
   // Overview 编辑 / 预览模式；默认编辑
   const [mode, setMode] = useState<"edit" | "preview">("edit");
+  // 当前激活的 tab（Save 按钮与编辑/预览切换仅 Overview 需要）
+  const [activeKey, setActiveKey] = useState("overview");
   const dirty = isTabDirty(tab);
 
   // 路径面包屑：Collection 名 > 祖先文件夹链；末段为当前名称（加粗）
@@ -129,8 +132,11 @@ export default function CollectionEditor({ tab }: Props) {
         size="small"
         className="collection-editor-tabs"
         style={{ flex: 1, minHeight: 0 }}
+        activeKey={activeKey}
+        onChange={setActiveKey}
         tabBarExtraContent={{
-          right: (
+          // 编辑/预览与保存仅服务 Overview；Runs 等其它 tab 不展示
+          right: activeKey === "overview" ? (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
               <Segmented
                 size="small"
@@ -151,7 +157,7 @@ export default function CollectionEditor({ tab }: Props) {
                 Save
               </Button>
             </span>
-          ),
+          ) : null,
         }}
         items={[
           {
@@ -186,7 +192,7 @@ export default function CollectionEditor({ tab }: Props) {
                 {
                   key: "runs",
                   label: "Runs",
-                  children: <ComingSoon label="Runs" />,
+                  children: <CollectionRunsPanel collectionId={tab.collectionId} />,
                 },
               ]
             : []),

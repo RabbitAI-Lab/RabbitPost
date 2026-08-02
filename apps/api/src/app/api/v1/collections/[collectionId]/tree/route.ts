@@ -18,11 +18,12 @@ function toItem(row: ItemRow): CollectionItem {
     description: row.description,
     sortOrder: row.sortOrder,
     request: row.request ?? undefined,
+    isScenarioRoot: row.isScenarioRoot,
     children: [],
   };
 }
 
-/** GET /api/v1/collections/:collectionId/tree — 返回嵌套树（folder/request） */
+/** GET /api/v1/collections/:collectionId/tree — 返回嵌套树（folder/request/scenario） */
 export const GET = handleRoute<Ctx>(async (_req, ctx, user) => {
   const { collectionId } = await ctx.params;
   await requireCollectionRole(collectionId, user.id);

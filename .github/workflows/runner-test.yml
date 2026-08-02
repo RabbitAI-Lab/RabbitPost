@@ -1,0 +1,42 @@
+name: runner-test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/runner/**"
+      - "crates/rp-core/**"
+      - ".github/workflows/runner-test.yml"
+  pull_request:
+    paths:
+      - "apps/runner/**"
+      - "crates/rp-core/**"
+      - ".github/workflows/runner-test.yml"
+  workflow_dispatch:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: runner
+
+      # rp-core 单元测试：模型契约 / 变量替换 / 信封解析 / 脚本沙箱 / HTTP 执行
+      - name: test rp-core
+        run: cargo test --manifest-path crates/rp-core/Cargo.toml --locked
+
+      # runner 单元测试 + 端到端 CLI 测试（真实二进制 + mock 服务端）
+      - name: test rabbitpost-runner
+        run: cargo test --manifest-path apps/runner/Cargo.toml --locked
+
+      - name: clippy
+        run: |
+          cargo clippy --manifest-path crates/rp-core/Cargo.toml --all-targets --locked -- -D warnings
+          cargo clippy --manifest-path apps/runner/Cargo.toml --all-targets --locked -- -D warnings

@@ -1,0 +1,168 @@
+name: runner-release
+
+# 发布 Runner CLI 预编译包：
+# - main 分支推送且 Runner 相关代码有变更：自动重建并刷新 runner-latest（由 changes job 把关）
+# - 推送 runner-v* tag：产出带版本号的存档 Release，同时刷新 runner-latest（无条件运行）
+# - 手动 dispatch：仅刷新 runner-latest（网页下载链接固定指向它）
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["runner-v*"]
+
+permissions:
+  contents: write
+
+# 发布是对同一 runner-latest 的写操作，多次触发串行排队，避免并发上传互相覆盖
+concurrency:
+  group: runner-release
+  cancel-in-progress: false
+
+jobs:
+  # 仅 main 分支推送需要变更把关；tag / dispatch 直接放行
+  changes:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      runner: ${{ steps.diff.outputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          before="$BEFORE"
+          if [ "$before" = "0000000000000000000000000000000000000000" ] || [ -z "$before" ]; then
+            before="HEAD~1"
+          fi
+          if git diff --name-only "$before" HEAD \
+              | grep -qE '^(apps/runner|crates/rp-core)/|^\.github/workflows/runner-release\.yml$'; then
+            echo "runner=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "runner=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: changes
+    if: github.ref != 'refs/heads/main' || needs.changes.outputs.runner == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            asset: rabbitpost-runner-macos-arm64
+          - name: macos-x64
+            os: macos-13
+            target: x86_64-apple-darwin
+            asset: rabbitpost-runner-macos-x64
+          - name: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            asset: rabbitpost-runner-linux-x64
+          - name: linux-arm64
+            os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            asset: rabbitpost-runner-linux-arm64
+            cross: true
+          - name: windows-x64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            asset: rabbitpost-runner-windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: runner-release
+          key: ${{ matrix.target }}
+
+      # linux-arm64 交叉编译：ring / rquickjs 的 C 代码需要目标架构的 gcc
+      - name: install cross toolchain (linux arm64)
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: build
+        run: cargo build --release --locked --manifest-path apps/runner/Cargo.toml --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+
+      # zip 保留可执行位，用户解压后无需再 chmod
+      - name: package (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist stage
+          cp "apps/runner/target/${{ matrix.target }}/release/rabbitpost-runner" stage/rabbitpost-runner
+          chmod +x stage/rabbitpost-runner
+          (cd stage && zip -X -q "../dist/${{ matrix.asset }}.zip" rabbitpost-runner)
+          cd dist
+          shasum -a 256 "${{ matrix.asset }}.zip" > "${{ matrix.asset }}.zip.sha256"
+
+      - name: package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path "apps/runner/target/${{ matrix.target }}/release/rabbitpost-runner.exe" -DestinationPath "dist/${{ matrix.asset }}.zip" -Force
+          $hash = (Get-FileHash "dist/${{ matrix.asset }}.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  ${{ matrix.asset }}.zip" | Out-File -Encoding ascii "dist/${{ matrix.asset }}.zip.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runner-${{ matrix.name }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.ref != 'refs/heads/main' || needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: runner-*
+          path: dist
+          merge-multiple: true
+
+      # runner-latest：网页下载链接固定指向这个 tag，内容每次全量刷新
+      - name: update rolling release (runner-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: runner-latest
+          name: Runner CLI (latest)
+          body: |
+            RabbitPost Runner CLI 预编译包（随 runner 代码更新自动重建）。
+
+            - rabbitpost-runner-macos-arm64.zip：macOS Apple Silicon
+            - rabbitpost-runner-macos-x64.zip：macOS Intel
+            - rabbitpost-runner-linux-x64.zip：Linux x86_64（glibc ≥ 2.35）
+            - rabbitpost-runner-linux-arm64.zip：Linux ARM64（glibc ≥ 2.35）
+            - rabbitpost-runner-windows-x64.zip：Windows x86_64
+
+            每个包附带同名 .sha256 校验文件；zip 已保留可执行位，解压即可运行。
+          prerelease: false
+          files: dist/*
+
+      # 推送 runner-v* tag 时额外产出带版本号的存档 Release
+      - name: publish versioned release (tag builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Runner CLI ${{ env.RELEASE_TAG }}
+          prerelease: false
+          files: dist/*

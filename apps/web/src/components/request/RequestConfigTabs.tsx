@@ -18,14 +18,16 @@ import {
   Typography,
   Upload,
 } from "antd";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { KeyValueItem } from "@rabbitpost/shared";
 import { isAuthConfigured } from "@rabbitpost/shared";
+import { useCasesStore } from "../../stores/cases";
 import { useTabsStore, type RequestTab } from "../../stores/tabs";
 import KeyValueEditor, { newKvItem } from "../common/KeyValueEditor";
 import MarkdownEditor from "../common/MarkdownEditor";
 import VarTextArea from "../common/variable/VarTextArea";
 import AuthEditor from "./AuthEditor";
+import CasesPanel from "./CasesPanel";
 import CookieManagerModal from "./CookieManagerModal";
 import RequestSettingsEditor from "./RequestSettingsEditor";
 import ScriptSnippets from "./ScriptSnippets";
@@ -206,6 +208,15 @@ export default function RequestConfigTabs({ tab }: Props) {
   const { message } = App.useApp();
   const updateConfig = useTabsStore((s) => s.updateConfig);
   const patch = updateConfig;
+  // Cases tab：仅已保存的接口（非草稿、非用例 tab、非场景步骤 tab）显示；提前加载以保证徽标计数准确
+  const showCases = !!tab.itemId && !tab.caseId && !tab.stepId;
+  const casesCount = useCasesStore((s) =>
+    showCases ? (s.byItemId[tab.itemId!]?.length ?? 0) : 0,
+  );
+  const loadCases = useCasesStore((s) => s.load);
+  useEffect(() => {
+    if (showCases) void loadCases(tab.itemId!);
+  }, [showCases, tab.itemId, loadCases]);
   // Cookie 管理弹窗
   const [cookiesOpen, setCookiesOpen] = useState(false);
   // Docs 编辑 / 预览模式；默认编辑
@@ -723,6 +734,16 @@ export default function RequestConfigTabs({ tab }: Props) {
             />
           ),
         },
+        // 接口用例：用例 tab 自身与草稿不显示
+        ...(showCases
+          ? [
+              {
+                key: "cases",
+                label: <TabLabel text="Cases" count={casesCount} />,
+                children: <CasesPanel tab={tab} />,
+              },
+            ]
+          : []),
       ]}
     />
   );

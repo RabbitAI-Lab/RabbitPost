@@ -21,6 +21,15 @@ export type HttpMethod = (typeof HTTP_METHODS)[number];
 export const TEAM_ROLES = ["owner", "admin", "editor", "viewer"] as const;
 export type TeamRole = (typeof TEAM_ROLES)[number];
 
+// ---------------------------------------------------------------------------
+// Enterprise（企业层角色与套餐）
+// ---------------------------------------------------------------------------
+export const ORG_ROLES = ["owner", "admin", "billing", "member"] as const;
+export type OrgRole = (typeof ORG_ROLES)[number];
+
+export const ORG_PLANS = ["free", "team", "business", "enterprise"] as const;
+export type OrgPlan = (typeof ORG_PLANS)[number];
+
 /** 请求协议类型；保存到 Collection 后不可再修改 */
 export const REQUEST_PROTOCOLS = [
   "http",
@@ -530,6 +539,21 @@ export interface User {
   createdAt: string;
 }
 
+/** 个人 API Key（CLI 凭证；明文 Token 仅创建时返回一次，库里只存 sha256 摘要） */
+export interface ApiKey {
+  id: string;
+  name: string;
+  /** 前缀（形如 rpk_ab12cd34），仅用于展示与区分 */
+  keyPrefix: string;
+  lastUsedAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiKeyWithToken {
+  apiKey: ApiKey;
+  token: string;
+}
+
 export interface Team {
   id: string;
   name: string;
@@ -547,6 +571,90 @@ export interface TeamMember {
   role: TeamRole;
   joinedAt: string;
   user?: Pick<User, "id" | "name" | "email" | "avatarUrl">;
+}
+
+// ---------------------------------------------------------------------------
+// Enterprise entities
+// ---------------------------------------------------------------------------
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  domain: string | null;
+  plan: OrgPlan;
+  status: "active" | "suspended";
+  createdBy: string;
+  createdAt: string;
+  /** 当前用户在该企业中的角色（列表 / 详情接口返回） */
+  role?: OrgRole;
+}
+
+export interface OrgMember {
+  orgId: string;
+  userId: string;
+  role: OrgRole;
+  joinedAt: string;
+  user: Pick<User, "id" | "name" | "email" | "avatarUrl">;
+  /** 该成员所属的企业内团队 id 列表 */
+  teamIds?: string[];
+  lastActiveAt?: string | null;
+}
+
+export interface AuditLog {
+  id: string;
+  orgId: string;
+  actorId: string | null;
+  actorName: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  targetName: string | null;
+  detail: Record<string, unknown> | null;
+  ip: string | null;
+  createdAt: string;
+}
+
+export const USAGE_METRICS = [
+  "request_sent",
+  "run_executed",
+  "collection_created",
+  "api_key_used",
+] as const;
+export type UsageMetric = (typeof USAGE_METRICS)[number];
+
+export interface UsageDataPoint {
+  /** ISO 日期或时间标签 */
+  label: string;
+  /** 分组名（按团队/成员/工作区时为各自名称，否则为总量） */
+  group?: string;
+  count: number;
+}
+
+export interface DashboardSummary {
+  teamCount: number;
+  activeTeamCount: number;
+  memberCount: number;
+  workspaceCount: number;
+  collectionCount: number;
+  requestSent30d: number;
+  runExecuted30d: number;
+  runPassed30d: number;
+  runFailed30d: number;
+  requestTrend: UsageDataPoint[];
+  runTrend: UsageDataPoint[];
+  teamActivity: { teamId: string; teamName: string; requestCount: number }[];
+  recentActivity: AuditLog[];
+}
+
+export interface UsageSummary {
+  metric: UsageMetric;
+  groupBy: "team" | "member" | "workspace" | "total";
+  from: string;
+  to: string;
+  points: UsageDataPoint[];
+  total: number;
 }
 
 export interface Workspace {
@@ -568,7 +676,13 @@ export interface Collection {
   createdAt: string;
 }
 
-export type CollectionItemType = "folder" | "request";
+export type CollectionItemType = "folder" | "request" | "scenario";
+
+/** Collection 公开分享链接：任何人凭链接可读取导出 JSON（每个 Collection 最多一个） */
+export interface CollectionShare {
+  token: string;
+  createdAt: string;
+}
 
 export interface CollectionItem {
   id: string;
@@ -581,10 +695,66 @@ export interface CollectionItem {
   sortOrder: number;
   /** 仅 type === "request" 时有值 */
   request?: RequestConfig;
+  /** 标记该 folder 是否为 Collection 的默认场景测试根目录 */
+  isScenarioRoot?: boolean;
   children?: CollectionItem[];
 }
 
+/**
+ * 接口用例：挂在 request item 下的独立请求配置副本。
+ * 新建时深拷贝接口当前 RequestConfig（快照继承），之后独立修改、保存、执行；
+ * 接口后续改动不同步到用例，可通过 reset 从接口重新继承（覆盖式）。
+ */
+export interface RequestCase {
+  id: string;
+  /** 所属 collection item（type === "request"） */
+  itemId: string;
+  name: string;
+  /** 用例说明（验证什么场景） */
+  description: string | null;
+  /** 完整请求配置快照 */
+  request: RequestConfig;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type DocumentItemType = "folder" | "document";
+
+// ---------------------------------------------------------------------------
+// Scenario（场景测试：Collection 内多接口编排，按顺序串行执行）
+// ---------------------------------------------------------------------------
+
+/** 场景测试步骤：从已有接口导入的请求配置快照，保留引用关系用于差异检测 */
+export interface ScenarioStep {
+  id: string;
+  /** 所属场景（collection_items 中 type=scenario 的条目） */
+  scenarioId: string;
+  /** 步骤名称（导入时默认为接口名，可修改） */
+  name: string;
+  /** 步骤排序 */
+  sortOrder: number;
+  /** 请求配置快照（导入时从源接口拷贝，之后独立编辑） */
+  request: RequestConfig;
+  /** 来源接口 id（记录来源引用，用于差异检测与同步；源接口删除后置 null） */
+  sourceItemId: string | null;
+  /** 导入时源接口的 updatedAt，用于快速判断是否有变更 */
+  sourceSnapshotAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 步骤与源接口的差异状态 */
+export type StepDiffStatus = "synced" | "outdated" | "orphaned";
+
+export interface ScenarioStepWithDiff extends ScenarioStep {
+  /** 与源接口的差异状态：synced=一致，outdated=源已变更，orphaned=源已删除 */
+  diffStatus: StepDiffStatus;
+  /** 源接口名称（用于展示） */
+  sourceItemName?: string;
+  /** 源接口当前配置（仅 outdated 时返回，前端用于字段级 diff 展示） */
+  sourceRequest?: RequestConfig;
+}
 
 /** Documents 模块条目：workspace 级自引用树（folder / document） */
 export interface DocumentItem {
@@ -617,6 +787,18 @@ export interface HistoryResponseSummary {
   statusText: string;
   sizeBytes: number;
   durationMs: number;
+  /** 响应头（打开历史 tab 时回填响应区） */
+  headers?: Record<string, string>;
+  /** 响应体文本（二进制标记 bodyBase64；超出截断阈值时为截断提示） */
+  bodyText?: string;
+  /** true 表示 bodyText 为 base64 编码的二进制 */
+  bodyBase64?: boolean;
+  /** 响应 Set-Cookie 解析结果 */
+  cookies?: ResponseCookie[];
+  /** 断言结果 */
+  testResults?: TestResult[];
+  /** 脚本 console 输出 */
+  consoleLogs?: ConsoleLogEntry[];
 }
 
 export interface HistoryEntry {
@@ -640,6 +822,8 @@ export interface ExecuteRequestInput {
   environmentId?: string | null;
   name?: string;
   request: RequestConfig;
+  /** Collection Item ID，用于 Runner 模式关联已保存的请求 */
+  itemId?: string;
 }
 
 export interface TestResult {
@@ -739,3 +923,15 @@ export function extractVariableNames(template: string): string[] {
 export * from "./spec";
 export * from "./spec-validate";
 export * from "./spec-outline";
+
+// ---------------------------------------------------------------------------
+// Collection 导入导出交换格式
+// ---------------------------------------------------------------------------
+
+export * from "./collection-file";
+
+// ---------------------------------------------------------------------------
+// Runner CLI（Runner 注册与任务下发）
+// ---------------------------------------------------------------------------
+
+export * from "./runner";

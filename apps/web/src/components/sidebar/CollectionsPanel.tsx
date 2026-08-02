@@ -1,10 +1,14 @@
 import {
   DeleteOutlined,
+  DeploymentUnitOutlined,
+  DownloadOutlined,
   EditOutlined,
+  ExperimentOutlined,
   FileAddOutlined,
   FolderAddOutlined,
   FolderOutlined,
   MoreOutlined,
+  PlayCircleOutlined,
   PlusOutlined,
   StarFilled,
   StarOutlined,
@@ -19,6 +23,7 @@ import { useContainerSize } from "../../lib/use-container-size";
 import { useAppStore } from "../../stores/app";
 import { useTabsStore } from "../../stores/tabs";
 import ChevronIcon from "../common/ChevronIcon";
+import ExportCollectionModal from "./ExportCollectionModal";
 
 const METHOD_COLORS: Record<string, string> = {
   GET: "#61affe",
@@ -48,12 +53,12 @@ function MethodTag({ method }: { method?: string }) {
   );
 }
 
-/** react-arborist 数据节点：children 为 null 表示叶子（request） */
+/** react-arborist 数据节点：children 为 null 表示叶子（request / scenario） */
 type ArboristNode = {
   id: string;
   name: string;
   children: ArboristNode[] | null;
-  kind: "collection" | "folder" | "request";
+  kind: "collection" | "folder" | "request" | "scenario";
   collection?: Collection;
   item?: CollectionItem;
 };
@@ -77,12 +82,14 @@ export default function CollectionsPanel({
     toggleFavoriteCollection,
     reorderCollections,
   } = useAppStore();
-  const { openFromItem, openCollection, openFolder, renameTab, closeTab } =
+  const { openFromItem, openCollection, openFolder, openRunner, openScenario, renameTab, closeTab } =
     useTabsStore();
   const { ref: sizeRef, size } = useContainerSize(visible);
   const treeRef = useRef<TreeApi<ArboristNode> | null>(null);
   // 新建条目后待选中的节点 id（等 treeData 刷新后再定位）
   const [pendingSelectId, setPendingSelectId] = useState<string | null>(null);
+  // 当前正在导出的 Collection（非 null 则弹窗打开）
+  const [exportTarget, setExportTarget] = useState<Collection | null>(null);
 
   const treeData = useMemo<ArboristNode[]>(() => {
     const buildNodes = (items: CollectionItem[]): ArboristNode[] =>
@@ -106,6 +113,24 @@ export default function CollectionsPanel({
       children: buildNodes(collectionTrees[col.id] ?? []),
     }));
   }, [collections, collectionTrees, favoriteCollectionIds]);
+
+  /** 判断节点是否位于场景测试目录子树内 */
+  const isInScenarioTree = (item: CollectionItem): boolean => {
+    if (item.isScenarioRoot) return true;
+    // 需要沿 parentId 链向上查找；但 CollectionItem 不含 parent 链，
+    // 这里通过 treeData 递归查找
+    const findInNodes = (nodes: ArboristNode[], targetId: string, insideScenario: boolean): boolean => {
+      for (const node of nodes) {
+        const isScenario = node.item?.isScenarioRoot === true;
+        if (node.id === targetId) return insideScenario || isScenario;
+        if (node.children) {
+          if (findInNodes(node.children, targetId, insideScenario || isScenario)) return true;
+        }
+      }
+      return false;
+    };
+    return findInNodes(treeData, item.id, false);
+  };
 
   // 新建后：展开祖先链、选中并滚动到新节点
   useEffect(() => {
@@ -146,9 +171,10 @@ export default function CollectionsPanel({
   const handleAddItem = async (
     collectionId: string,
     parentId: string | null,
-    type: "folder" | "request",
+    type: "folder" | "request" | "scenario",
   ) => {
-    const name = type === "folder" ? "New Folder" : "New Request";
+    const name =
+      type === "folder" ? "New Folder" : type === "scenario" ? "New Scenario" : "New Request";
     const created = await collectionsApi.createItem(collectionId, {
       parentId,
       type,
@@ -211,39 +237,66 @@ export default function CollectionsPanel({
     });
   };
 
-  const itemMenu = (item: CollectionItem) => ({
-    items: [
-      ...(item.type === "folder"
-        ? [
-            {
-              key: "add-request",
-              icon: <FileAddOutlined />,
-              label: "新建请求",
-              onClick: () => void handleAddItem(item.collectionId, item.id, "request"),
-            },
-            {
-              key: "add-folder",
-              icon: <FolderAddOutlined />,
-              label: "新建子文件夹",
-              onClick: () => void handleAddItem(item.collectionId, item.id, "folder"),
-            },
-          ]
-        : []),
-      {
-        key: "rename",
-        icon: <EditOutlined />,
-        label: "重命名",
-        onClick: () => void handleRename(item),
-      },
-      {
-        key: "delete",
-        icon: <DeleteOutlined />,
-        label: "删除",
-        danger: true,
-        onClick: () => handleDeleteItem(item),
-      },
-    ],
-  });
+  const itemMenu = (item: CollectionItem) => {
+    const inScenario = isInScenarioTree(item);
+    const isScenarioRootFolder = item.isScenarioRoot === true;
+    return {
+      items: [
+        // 场景测试目录（及其子目录）：新建场景 + 新建子目录
+        ...(item.type === "folder" && (isScenarioRootFolder || inScenario)
+          ? [
+              {
+                key: "add-scenario",
+                icon: <DeploymentUnitOutlined />,
+                label: "新建场景",
+                onClick: () => void handleAddItem(item.collectionId, item.id, "scenario"),
+              },
+              {
+                key: "add-folder",
+                icon: <FolderAddOutlined />,
+                label: "新建子文件夹",
+                onClick: () => void handleAddItem(item.collectionId, item.id, "folder"),
+              },
+            ]
+          : []),
+        // 普通目录：新建请求 + 新建子文件夹
+        ...(item.type === "folder" && !isScenarioRootFolder && !inScenario
+          ? [
+              {
+                key: "add-request",
+                icon: <FileAddOutlined />,
+                label: "新建请求",
+                onClick: () => void handleAddItem(item.collectionId, item.id, "request"),
+              },
+              {
+                key: "add-folder",
+                icon: <FolderAddOutlined />,
+                label: "新建子文件夹",
+                onClick: () => void handleAddItem(item.collectionId, item.id, "folder"),
+              },
+            ]
+          : []),
+        {
+          key: "rename",
+          icon: <EditOutlined />,
+          label: "重命名",
+          onClick: () => void handleRename(item),
+        },
+        // 场景测试根目录不可删除
+        ...(!isScenarioRootFolder
+          ? [
+              {
+                key: "delete",
+                icon: <DeleteOutlined />,
+                label: "删除",
+                danger: true,
+                onClick: () => handleDeleteItem(item),
+              },
+            ]
+          : []),
+      ],
+    };
+  };
 
   const collectionMenu = (col: Collection) => ({
     items: [
@@ -258,6 +311,20 @@ export default function CollectionsPanel({
         icon: <FolderAddOutlined />,
         label: "新建文件夹",
         onClick: () => void handleAddItem(col.id, null, "folder"),
+      },
+      { type: "divider" as const },
+      {
+        key: "run",
+        icon: <PlayCircleOutlined />,
+        label: "Run",
+        onClick: () => openRunner(col),
+      },
+      { type: "divider" as const },
+      {
+        key: "export",
+        icon: <DownloadOutlined />,
+        label: "导出 Collection",
+        onClick: () => setExportTarget(col),
       },
       {
         key: "delete",
@@ -283,6 +350,8 @@ export default function CollectionsPanel({
         onClick={() => {
           if (data.kind === "request" && data.item) {
             openFromItem(data.item);
+          } else if (data.kind === "scenario" && data.item) {
+            openScenario(data.item);
           } else if (data.kind === "collection" && data.collection) {
             // 打开 Collection 详情 tab；未选中时仅切换选中（由外层 Row 的 handleClick
             // 在冒泡时完成）并保持展开，已选中的再次点击才切换折叠
@@ -313,15 +382,39 @@ export default function CollectionsPanel({
         <span className="tree-chevron">
           {node.isInternal && <ChevronIcon open={node.isOpen} size={12} />}
         </span>
-        {data.kind === "folder" && (
+        {data.kind === "folder" && data.item?.isScenarioRoot && (
+          <ExperimentOutlined
+            style={{ fontSize: 17, color: "#722ed1", marginRight: 5, flexShrink: 0 }}
+          />
+        )}
+        {data.kind === "folder" && !data.item?.isScenarioRoot && (
           <FolderOutlined
             style={{ fontSize: 17, color: "#8c8c8c", marginRight: 5, flexShrink: 0 }}
+          />
+        )}
+        {data.kind === "scenario" && (
+          <DeploymentUnitOutlined
+            style={{ fontSize: 15, color: "#722ed1", marginRight: 5, flexShrink: 0 }}
           />
         )}
         {data.kind === "request" && <MethodTag method={data.item?.request?.method} />}
         <Typography.Text ellipsis style={{ fontSize: 13, flex: 1 }}>
           {data.name}
         </Typography.Text>
+        {/* 场景测试目录（及其子目录）hover 显 +（新建场景） */}
+        {data.kind === "folder" && data.item && isInScenarioTree(data.item) && (
+          <Button
+            className="tree-plus-btn"
+            type="text"
+            size="small"
+            title="新建场景"
+            icon={<PlusOutlined />}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleAddItem(data.item!.collectionId, data.item!.id, "scenario");
+            }}
+          />
+        )}
         {/* Collection 新建请求：hover 显 + */}
         {data.kind === "collection" && data.collection && (
           <Button
@@ -400,12 +493,29 @@ export default function CollectionsPanel({
           rowHeight={24}
           indent={12}
           openByDefault
-          disableDrag={(data) => data.kind !== "collection"}
-          disableDrop={({ parentNode, dragNodes }) =>
-            // 只允许 Collection 在根级之间重排，禁止拖入其它节点内部
-            !parentNode.isRoot ||
-            dragNodes.some((n) => n.data.kind !== "collection")
-          }
+          disableDrag={(data) => data.kind !== "collection" && data.kind !== "scenario"}
+          disableDrop={({ parentNode, dragNodes }) => {
+            // Collection 拖拽：只允许根级之间重排
+            if (dragNodes.some((n) => n.data.kind === "collection")) {
+              return !parentNode.isRoot;
+            }
+            // scenario 拖拽：只能在场景测试目录子树内
+            if (dragNodes.some((n) => n.data.kind === "scenario")) {
+              // 目标必须是场景测试目录或其子目录
+              if (parentNode.isRoot) return true;
+              const targetItem = parentNode.data.item;
+              if (!targetItem) return true;
+              return !isInScenarioTree(targetItem);
+            }
+            // request/folder 拖拽：不能拖入场景测试目录
+            if (dragNodes.some((n) => n.data.kind === "request" || n.data.kind === "folder")) {
+              if (parentNode.isRoot) return false; // 根级允许
+              const targetItem = parentNode.data.item;
+              if (!targetItem) return false;
+              return isInScenarioTree(targetItem); // 场景目录内禁止
+            }
+            return false;
+          }}
           onMove={handleMove}
           disableMultiSelection
           searchTerm={search.trim()}
@@ -424,6 +534,11 @@ export default function CollectionsPanel({
           {NodeRow}
         </Tree>
       ) : null}
+      <ExportCollectionModal
+        collection={exportTarget}
+        open={exportTarget !== null}
+        onClose={() => setExportTarget(null)}
+      />
     </div>
   );
 }

@@ -10,9 +10,9 @@ import {
 } from "@ant-design/icons";
 import { Button, Dropdown, Input } from "antd";
 import type { MenuProps } from "antd";
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { documentsApi, environmentsApi } from "../../api";
+import { useContainerSize } from "../../lib/use-container-size";
 import { useAppStore } from "../../stores/app";
 import { useTabsStore } from "../../stores/tabs";
 import ChevronIcon from "../common/ChevronIcon";
@@ -36,14 +36,24 @@ const NAV_ITEMS: { key: NavKey; label: string }[] = [
 ];
 
 // Collections / Documents 面板需要额外 prop（search / visible），在 JSX 中单独渲染
-const PANELS: Partial<Record<NavKey, ReactNode>> = {
+const PANELS = {
   environments: <EnvironmentsPanel />,
   specs: <SpecsPanel />,
   history: <HistoryPanel />,
-};
+} as const;
 
 /** 次要展开组的内容区固定高度（约 3 行数据，内部滚动） */
 const SECONDARY_PANEL_HEIGHT = 180;
+/** 分组 header 高度 */
+const GROUP_HEADER_HEIGHT = 32;
+/** 分组底部分隔线，计入 border-box 高度 */
+const GROUP_BORDER = 1;
+/** 折叠态分组高度：仅留 header */
+const COLLAPSED_HEIGHT = GROUP_HEADER_HEIGHT + GROUP_BORDER;
+/** 次要展开组高度：header + 固定小窗 */
+const SECONDARY_HEIGHT = COLLAPSED_HEIGHT + SECONDARY_PANEL_HEIGHT;
+/** 折叠 / 展开过渡动效 */
+const GROUP_TRANSITION = "height 220ms cubic-bezier(0.25, 0.1, 0.25, 1)";
 
 /**
  * Postman 风格侧栏：
@@ -67,6 +77,8 @@ export default function SidebarNav() {
     specs: false,
     history: false,
   });
+  // Body 容器高度：主分组需据此算出剩余空间，从而拿到可过渡的显式高度
+  const { ref: bodyRef, size: bodySize } = useContainerSize();
   const [search, setSearch] = useState("");
   const [newColOpen, setNewColOpen] = useState(false);
   const [newSpecOpen, setNewSpecOpen] = useState(false);
@@ -79,6 +91,33 @@ export default function SidebarNav() {
 
   // 顺序上第一个展开的组占满剩余空间
   const primaryKey = NAV_ITEMS.find((item) => expanded[item.key])?.key ?? null;
+
+  /**
+   * 各分组的目标高度（px，border-box）：折叠 = 仅 header，次要展开组 = 固定小窗，
+   * 主分组 = 容器剩余空间。高度始终是显式 px，切换 expanded 后新旧值都是确定像素，
+   * 由 CSS transition 自行插值，无需命令式写样式，因此不会闪烁也不会卡住。
+   */
+  const groupHeights = useMemo(() => {
+    const heights = {} as Record<NavKey, number | null>;
+    let used = 0;
+    NAV_ITEMS.forEach(({ key }) => {
+      // 主分组先记为 null，待其余组高度累计完再按剩余空间求得
+      const h = !expanded[key]
+        ? COLLAPSED_HEIGHT
+        : key === primaryKey
+          ? null
+          : SECONDARY_HEIGHT;
+      heights[key] = h;
+      used += h ?? 0;
+    });
+    // 容器高度未量到时（首帧）主分组回退 flex:1，量到后给显式高度以支持过渡
+    if (primaryKey) {
+      heights[primaryKey] = bodySize.height
+        ? Math.max(COLLAPSED_HEIGHT, bodySize.height - used)
+        : null;
+    }
+    return heights;
+  }, [expanded, primaryKey, bodySize.height]);
 
   // 新建环境：直接创建默认名称 New Environment，并在右侧打开编辑
   const handleNewEnvironment = async () => {
@@ -188,6 +227,7 @@ export default function SidebarNav() {
 
       {/* Body：可折叠 group 菜单 */}
       <div
+        ref={bodyRef}
         style={{
           flex: 1,
           minHeight: 0,
@@ -197,18 +237,21 @@ export default function SidebarNav() {
       >
         {NAV_ITEMS.map((item) => {
           const isExpanded = expanded[item.key];
-          const isPrimary = isExpanded && item.key === primaryKey;
+          const height = groupHeights[item.key];
           return (
             <div
               key={item.key}
               style={{
+                boxSizing: "border-box",
                 display: "flex",
                 flexDirection: "column",
-                borderBottom: "1px solid #f0f0f0",
-                // 第一个展开的组占满剩余空间，其余组按内容高度
-                ...(isPrimary
-                  ? { flex: 1, minHeight: 0 }
-                  : { flexShrink: 0 }),
+                borderBottom: `${GROUP_BORDER}px solid #f0f0f0`,
+                overflow: "hidden",
+                transition: GROUP_TRANSITION,
+                // 首帧容器未量到高度时主分组用 flex 占位，其余情况均为显式 px
+                ...(height != null
+                  ? { height, flex: "none" }
+                  : { flex: 1, minHeight: 0 }),
               }}
             >
               {/* Group header：无图标，大写标题 */}
@@ -216,7 +259,7 @@ export default function SidebarNav() {
                 className="sidebar-hover"
                 onClick={() => toggle(item.key)}
                 style={{
-                  height: 32,
+                  height: GROUP_HEADER_HEIGHT,
                   flexShrink: 0,
                   display: "flex",
                   alignItems: "center",
@@ -239,16 +282,16 @@ export default function SidebarNav() {
                 </span>
               </div>
 
-              {/* 面板保持挂载，折叠仅显隐（保留树的展开状态 / 搜索词 / 已加载数据） */}
+              {/* 面板始终挂载（保留树的展开状态 / 搜索词 / 已加载数据），高度随
+                  分组高度自适应：折叠时被 header 压到 0，由外层 overflow 裁剪 */}
               <div
                 style={{
-                  display: isExpanded ? "block" : "none",
+                  flex: 1,
+                  minHeight: 0,
+                  overflow: "hidden",
                   ...(item.key === "collections" || item.key === "documents"
                     ? { paddingLeft: 10, paddingRight: 10 }
                     : {}),
-                  ...(isPrimary
-                    ? { flex: 1, minHeight: 0 }
-                    : { height: SECONDARY_PANEL_HEIGHT, flexShrink: 0 }),
                 }}
               >
                 {item.key === "collections" ? (
@@ -256,7 +299,7 @@ export default function SidebarNav() {
                 ) : item.key === "documents" ? (
                   <DocumentsPanel visible={isExpanded} />
                 ) : (
-                  PANELS[item.key]
+                  PANELS[item.key as keyof typeof PANELS]
                 )}
               </div>
             </div>

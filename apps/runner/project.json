@@ -1,0 +1,36 @@
+{
+  "name": "@rabbitpost/runner",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/runner/src",
+  "targets": {
+    "build-runner": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo build --release",
+        "cwd": "apps/runner"
+      }
+    },
+    "check-runner": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo clippy --all-targets -- -D warnings",
+        "cwd": "apps/runner"
+      }
+    },
+    "test-runner": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo test",
+        "cwd": "apps/runner"
+      }
+    },
+    "test-core": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo test",
+        "cwd": "crates/rp-core"
+      }
+    }
+  }
+}

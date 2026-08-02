@@ -71,6 +71,16 @@ export const DELETE = handleRoute<Ctx>(async (_req, ctx, user) => {
   const { itemId } = await ctx.params;
   const { collectionId } = await requireItemRole(itemId, user.id, "editor");
 
+  // 场景测试根目录不可删除
+  const [target] = await db
+    .select({ isScenarioRoot: collectionItems.isScenarioRoot })
+    .from(collectionItems)
+    .where(eq(collectionItems.id, itemId))
+    .limit(1);
+  if (target?.isScenarioRoot) {
+    throw new HttpError(400, "FORBIDDEN", "Scenario root folder cannot be deleted");
+  }
+
   // 收集整棵子树 id 后一次性删除
   const all = await db
     .select({ id: collectionItems.id, parentId: collectionItems.parentId })

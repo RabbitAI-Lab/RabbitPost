@@ -1,9 +1,15 @@
+import { DeploymentUnitOutlined, ExperimentOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import { Button, Empty, Tabs } from "antd";
 import { useLayoutEffect, useRef } from "react";
 import { useTabsStore, isTabDirty } from "../../stores/tabs";
+import { confirmCloseTab } from "../../lib/save-shortcut";
+import CliCenter from "../cli/CliCenter";
 import CollectionEditor from "../collection/CollectionEditor";
 import DocumentEditor from "../document/DocumentEditor";
 import EnvironmentEditor from "../environment/EnvironmentEditor";
+import ProfileCenter from "../profile/ProfileCenter";
+import CollectionRunner from "../runner/CollectionRunner";
+import ScenarioEditor from "../scenario/ScenarioEditor";
 import SpecEditor from "../spec/SpecEditor";
 import EnvSwitcher from "./EnvSwitcher";
 import RequestEditor from "./RequestEditor";
@@ -13,7 +19,7 @@ const TAB_WIDTH = 170;
 const TAB_MIN_WIDTH = 75;
 
 export default function RequestTabs() {
-  const { tabs, activeKey, setActive, closeTab, openDraft } = useTabsStore();
+  const { tabs, activeKey, setActive, openDraft } = useTabsStore();
   const rootRef = useRef<HTMLDivElement>(null);
 
   // 根据导航条可用空间动态计算 tab 宽度：默认 170，空间不足时收缩，最小 75，再小则滚动
@@ -78,7 +84,7 @@ export default function RequestTabs() {
         onChange={setActive}
         onEdit={(key, action) => {
           if (action === "remove" && typeof key === "string") {
-            closeTab(key);
+            confirmCloseTab(key);
           } else if (action === "add") {
             // 新建草稿继承最后一个请求 tab 的请求方法
             const lastRequest = [...tabs]
@@ -93,6 +99,18 @@ export default function RequestTabs() {
           key: tab.key,
           label: (
             <span className="request-tab-label">
+              {/* 用例 tab：紫色实验图标前缀 */}
+              {tab.kind === "request" && tab.caseId ? (
+                <ExperimentOutlined style={{ marginRight: 4, color: "#722ed1" }} />
+              ) : null}
+              {/* Runner tab：播放图标前缀 */}
+              {tab.kind === "runner" ? (
+                <PlayCircleOutlined style={{ marginRight: 4, color: "#fa8c16" }} />
+              ) : null}
+              {/* Scenario tab：编排图标前缀 */}
+              {tab.kind === "scenario" ? (
+                <DeploymentUnitOutlined style={{ marginRight: 4, color: "#722ed1" }} />
+              ) : null}
               {tab.name}
               {/* 未保存修改：右侧悬浮胡萝卜橙圆点（hover 时让位给关闭按钮） */}
               {isTabDirty(tab) && <span className="request-tab-dirty-dot" />}
@@ -107,6 +125,14 @@ export default function RequestTabs() {
               <DocumentEditor tab={tab} />
             ) : tab.kind === "spec" ? (
               <SpecEditor tab={tab} />
+            ) : tab.kind === "cli" ? (
+              <CliCenter tab={tab} />
+            ) : tab.kind === "profile" ? (
+              <ProfileCenter />
+            ) : tab.kind === "runner" ? (
+              <CollectionRunner tab={tab} />
+            ) : tab.kind === "scenario" ? (
+              <ScenarioEditor tab={tab} />
             ) : (
               <CollectionEditor tab={tab} />
             ),

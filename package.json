@@ -8,13 +8,21 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "nx run-many -t dev --projects=@rabbitpost/web,@rabbitpost/api --parallel",
-    "dev:web": "nx dev @rabbitpost/web",
-    "dev:api": "nx dev @rabbitpost/api",
+    "dev": "node scripts/ensure-ports.mjs && nx run-many -t dev --projects=@rabbitpost/web,@rabbitpost/api --parallel",
+    "dev:web": "node scripts/ensure-ports.mjs 5173 && nx dev @rabbitpost/web",
+    "dev:api": "node scripts/ensure-ports.mjs 4000 && nx dev @rabbitpost/api",
+    "dev:free-ports": "node scripts/ensure-ports.mjs",
+    "dev:docs": "nx dev @rabbitpost/docs",
     "build": "nx run-many -t build --all",
     "typecheck": "nx run-many -t typecheck --all",
+    "runner:build": "nx build-runner @rabbitpost/runner",
+    "runner:test": "nx run-many -t test-runner,test-core --projects=@rabbitpost/runner",
+    "cli:build": "nx build-cli @rabbitpost/cli",
+    "cli:test": "nx test-cli @rabbitpost/cli",
+    "cli:package": "nx package-cli @rabbitpost/cli",
     "db:up": "nx db:up @rabbitpost/api",
-    "db:push": "nx db:push @rabbitpost/api"
+    "db:push": "nx db:push @rabbitpost/api",
+    "test": "nx run-many -t test test-cli test-runner test-core --all"
   },
   "devDependencies": {
     "nx": "latest",

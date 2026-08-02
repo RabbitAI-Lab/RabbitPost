@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  mock-server:
+    build: .
+    ports:
+      - "3090:3090"
+    environment:
+      - NODE_ENV=production
+      - PORT=3090
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - mock-network
+
+  # 可选：用于测试的 Postman CLI (newman)
+  newman:
+    image: postman/newman:alpine
+    depends_on:
+      mock-server:
+        condition: service_healthy
+    volumes:
+      - ./postman:/etc/newman
+    command: run /etc/newman/collection.json --environment /etc/newman/environment.json
+    networks:
+      - mock-network
+    profiles:
+      - test
+
+networks:
+  mock-network:
+    driver: bridge

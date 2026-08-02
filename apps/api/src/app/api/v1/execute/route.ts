@@ -8,8 +8,12 @@ import {
   TLS_PROTOCOLS,
   type ExecuteRequestInput,
 } from "@rabbitpost/shared";
+import { db } from "../../../../db";
+import { histories } from "../../../../db/schema";
 import { executeRequest } from "../../../../lib/executor";
 import { handleRoute, ok, requireWorkspaceRole } from "../../../../lib/http";
+import { dispatchAndWait } from "../../../../lib/runner-dispatch";
+import { hasAvailableRunner } from "../../../../lib/embedded-runner";
 
 const kvSchema = z
   .object({
@@ -74,17 +78,68 @@ const inputSchema = z.object({
   environmentId: z.string().uuid().nullable().optional(),
   name: z.string().max(256).optional(),
   request: requestSchema,
+  /** 可选：Collection Item ID，用于 Runner 模式关联已保存的请求 */
+  itemId: z.string().uuid().optional(),
 });
 
 /**
  * POST /api/v1/execute
- * 服务端代理执行 HTTP 请求（避开浏览器 CORS）。
+ * 执行 HTTP 请求：优先通过 Runner 执行，无可用 Runner 时回退到服务端直接执行。
  * 上游/网络错误与脚本输出均原文透传。
  */
 export const POST = handleRoute(async (req, _ctx, user) => {
-  const input = inputSchema.parse(await req.json()) as ExecuteRequestInput;
+  const input = inputSchema.parse(await req.json()) as ExecuteRequestInput & { itemId?: string };
   // viewer 也允许发送请求（与 Postman 一致，只读成员仍可调试）
-  await requireWorkspaceRole(input.workspaceId, user.id, "viewer");
+  const { teamId } = await requireWorkspaceRole(input.workspaceId, user.id, "viewer");
+
+  // 检查是否启用 Runner 模式（默认启用，可通过环境变量禁用）
+  const useRunner = process.env.DISABLE_RUNNER_EXECUTION !== "true";
+  const hasRunner = await hasAvailableRunner(teamId);
+
+  if (useRunner && hasRunner) {
+    // Runner 模式：派发任务并同步等待结果
+    const result = await dispatchAndWait({
+      workspaceId: input.workspaceId,
+      teamId,
+      userId: user.id,
+      targetType: "request",
+      targetId: input.itemId ?? crypto.randomUUID(), // 无 itemId 时用随机 UUID
+      targetName: input.name ?? "Untitled Request",
+      environmentId: input.environmentId ?? null,
+      requestConfig: input.request, // 直接传入请求配置，跳过库中展开
+      timeoutMs: 60_000, // 60 秒超时
+    });
+    // Runner 路径不经过 executeRequest，需要手动写入 histories
+    // （与 executor.ts 的行为一致：失败也记录，保留现场）
+    try {
+      await db.insert(histories).values({
+        workspaceId: input.workspaceId,
+        userId: user.id,
+        name: input.name ?? null,
+        request: input.request,
+        response: result.ok
+          ? {
+              status: result.status!,
+              statusText: result.statusText ?? "",
+              sizeBytes: result.sizeBytes ?? 0,
+              durationMs: result.durationMs ?? 0,
+              headers: result.headers,
+              bodyText: result.bodyText,
+              bodyBase64: result.bodyBase64,
+              cookies: result.cookies,
+              testResults: result.testResults,
+              consoleLogs: result.consoleLogs,
+            }
+          : null,
+        error: result.ok ? null : (result.error ?? "unknown error"),
+      });
+    } catch (historyErr) {
+      console.error("[execute] failed to persist history (runner path):", historyErr);
+    }
+    return ok(result);
+  }
+
+  // 回退模式：服务端直接执行（用于调试或 Runner 不可用时）
   const result = await executeRequest(input, user.id);
   return ok(result);
 });

@@ -1,5 +1,15 @@
-import { InboxOutlined } from "@ant-design/icons";
-import { App, Modal, Spin, Typography, Upload } from "antd";
+import { InboxOutlined, LinkOutlined } from "@ant-design/icons";
+import {
+  App,
+  Button,
+  Input,
+  Modal,
+  Segmented,
+  Space,
+  Spin,
+  Typography,
+  Upload,
+} from "antd";
 import { useState } from "react";
 import type {
   DigestAlgorithm,
@@ -13,14 +23,15 @@ import type {
   RequestBody,
   RequestConfig,
   RequestScripts,
+  RpCollectionNode,
 } from "@rabbitpost/shared";
-import { HTTP_METHODS, RAW_LANGUAGES } from "@rabbitpost/shared";
-import { collectionsApi } from "../../api";
+import { HTTP_METHODS, parseCollectionFile, RAW_LANGUAGES } from "@rabbitpost/shared";
+import { collectionsApi, importApi } from "../../api";
 import { useAppStore } from "../../stores/app";
 import { newKvItem } from "../common/KeyValueEditor";
 
 // ---------------------------------------------------------------------------
-// Postman Collection v2/v2.1 宽松类型
+// Postman Collection v2/v2.1 宽松类型（兼容导入）
 // ---------------------------------------------------------------------------
 interface PmKv {
   key?: string;
@@ -291,11 +302,23 @@ function convertBody(body: PmRequest["body"]): RequestBody {
   }
 }
 
+/**
+ * 将 Postman 脚本中的 pm. 调用转换为 rp. 命名（RabbitPost 脚本 API 约定）。
+ * 用 \bpm\. 仅匹配独立标识符，避免误伤 rpm. / xpm. 等情况。
+ */
+function pmToRp(code: string): string {
+  return code.replace(/\bpm\./g, "rp.");
+}
+
 function convertScripts(events: PmItem["event"]): RequestScripts {
   const pick = (listen: string): string | undefined => {
     const exec = (events ?? []).find((e) => e.listen === listen)?.script?.exec;
-    if (Array.isArray(exec)) return exec.join("\n");
-    return typeof exec === "string" ? exec : undefined;
+    const code = Array.isArray(exec)
+      ? exec.join("\n")
+      : typeof exec === "string"
+        ? exec
+        : undefined;
+    return code ? pmToRp(code) : code;
   };
   return { preRequest: pick("prerequest"), test: pick("test") };
 }
@@ -334,34 +357,94 @@ function convertRequest(req: PmRequest, events: PmItem["event"]): RequestConfig 
   };
 }
 
+/** Postman item 树 -> RabbitPost 节点树 */
+function pmToNodes(items: PmItem[]): RpCollectionNode[] {
+  const nodes: RpCollectionNode[] = [];
+  for (const it of items) {
+    if (Array.isArray(it.item)) {
+      nodes.push({
+        type: "folder",
+        name: it.name?.trim() || "Folder",
+        items: pmToNodes(it.item),
+      });
+    } else if (it.request) {
+      nodes.push({
+        type: "request",
+        name: it.name?.trim() || "Request",
+        request: convertRequest(it.request, it.event),
+      });
+    }
+  }
+  return nodes;
+}
+
 /** 递归创建 folder/request，返回导入的请求数 */
-async function importItems(
+async function importNodes(
   collectionId: string,
-  items: PmItem[],
+  nodes: RpCollectionNode[],
   parentId: string | null,
 ): Promise<number> {
   let count = 0;
-  for (const it of items) {
-    if (Array.isArray(it.item)) {
+  for (const node of nodes) {
+    if (node.type === "folder") {
       const folder = await collectionsApi.createItem(collectionId, {
         parentId,
         type: "folder",
-        name: it.name?.trim() || "Folder",
+        name: node.name.trim() || "Folder",
       });
-      count += await importItems(collectionId, it.item, folder.id);
-    } else if (it.request) {
+      if (node.description) {
+        await collectionsApi.updateItem(folder.id, { description: node.description });
+      }
+      count += await importNodes(collectionId, node.items, folder.id);
+    } else {
       const created = await collectionsApi.createItem(collectionId, {
         parentId,
         type: "request",
-        name: it.name?.trim() || "Request",
+        name: node.name.trim() || "Request",
       });
-      await collectionsApi.updateItem(created.id, {
-        request: convertRequest(it.request, it.event),
-      });
+      if (node.request) {
+        await collectionsApi.updateItem(created.id, { request: node.request });
+      }
       count += 1;
     }
   }
   return count;
+}
+
+// ---------------------------------------------------------------------------
+// 源文本 -> 待导入数据（文件与链接共用）
+// ---------------------------------------------------------------------------
+interface ParsedSource {
+  name: string;
+  description: string | null;
+  nodes: RpCollectionNode[];
+}
+
+/**
+ * 优先按 RabbitPost Collection 解析，否则回退到 Postman Collection v2/v2.1。
+ * 解析失败抛 Error，由调用方透传提示。
+ */
+function parseSource(text: string): ParsedSource {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`JSON 解析失败：${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  const rp = parseCollectionFile(raw);
+  if (rp) {
+    return { name: rp.name, description: rp.description ?? null, nodes: rp.items };
+  }
+
+  const pm = raw as PmCollection;
+  const pmName = pm?.info?.name?.trim();
+  if (!pmName || !Array.isArray(pm.item)) {
+    throw new Error(
+      "不是有效的 RabbitPost Collection 内容（也未识别为 Postman Collection）",
+    );
+  }
+  return { name: pmName, description: null, nodes: pmToNodes(pm.item) };
 }
 
 // ---------------------------------------------------------------------------
@@ -376,31 +459,27 @@ export default function ImportCollectionModal({ open, onClose }: Props) {
   const { message } = App.useApp();
   const currentWorkspaceId = useAppStore((s) => s.currentWorkspaceId);
   const refreshCollections = useAppStore((s) => s.refreshCollections);
+  const reorderCollections = useAppStore((s) => s.reorderCollections);
+  const [source, setSource] = useState<"file" | "link">("file");
+  const [url, setUrl] = useState("");
   const [importing, setImporting] = useState(false);
 
-  const handleFile = async (file: File) => {
+  /** 建 Collection + 递归建条目，完成后置顶 */
+  const runImport = async (parsed: ParsedSource) => {
     if (!currentWorkspaceId) return;
-
-    let parsed: PmCollection;
-    try {
-      parsed = JSON.parse(await file.text()) as PmCollection;
-    } catch (e) {
-      message.error(`JSON 解析失败：${e instanceof Error ? e.message : String(e)}`);
-      return;
-    }
-
-    const name = parsed.info?.name?.trim();
-    if (!name || !Array.isArray(parsed.item)) {
-      message.error("不是有效的 Postman Collection 文件（缺少 info.name 或 item）");
-      return;
-    }
-
     setImporting(true);
     try {
-      const col = await collectionsApi.create(currentWorkspaceId, name);
-      const count = await importItems(col.id, parsed.item as PmItem[], null);
+      const col = await collectionsApi.create(
+        currentWorkspaceId,
+        parsed.name,
+        parsed.description ?? undefined,
+      );
+      const count = await importNodes(col.id, parsed.nodes, null);
       await refreshCollections();
-      message.success(`已导入「${name}」（${count} 个请求）`);
+      // 新建 Collection 默认排在末尾，导入后重排到第一个
+      const ids = useAppStore.getState().collections.map((c) => c.id);
+      await reorderCollections([col.id, ...ids.filter((id) => id !== col.id)]);
+      message.success(`已导入「${parsed.name}」（${count} 个请求）`);
       onClose();
     } catch (e) {
       // 导入中途失败：错误原文透传，已创建的部分保留
@@ -411,6 +490,37 @@ export default function ImportCollectionModal({ open, onClose }: Props) {
     }
   };
 
+  const handleFile = async (file: File) => {
+    if (!currentWorkspaceId) return;
+    let parsed: ParsedSource;
+    try {
+      parsed = parseSource(await file.text());
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    await runImport(parsed);
+  };
+
+  /** 链接导入：由服务端代取文本（规避 CORS），再走同一套解析 */
+  const handleUrlImport = async () => {
+    if (!currentWorkspaceId) return;
+    const target = url.trim();
+    if (!target) return;
+    setImporting(true);
+    let parsed: ParsedSource;
+    try {
+      const { text } = await importApi.fetchUrl(target);
+      parsed = parseSource(text);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : String(e));
+      return;
+    } finally {
+      setImporting(false);
+    }
+    await runImport(parsed);
+  };
+
   return (
     <Modal
       title="导入 Collection"
@@ -419,25 +529,62 @@ export default function ImportCollectionModal({ open, onClose }: Props) {
       footer={null}
       destroyOnHidden
     >
+      <Segmented<"file" | "link">
+        block
+        value={source}
+        onChange={setSource}
+        options={[
+          { value: "file", label: "文件", icon: <InboxOutlined /> },
+          { value: "link", label: "链接", icon: <LinkOutlined /> },
+        ]}
+        style={{ marginBottom: 12 }}
+      />
       <Spin spinning={importing} description="正在导入…">
-        <Upload.Dragger
-          accept=".json,application/json"
-          maxCount={1}
-          showUploadList={false}
-          disabled={importing}
-          beforeUpload={(file) => {
-            void handleFile(file);
-            return false; // 阻止 antd 自动上传，本地解析
-          }}
-        >
-          <p style={{ margin: "8px 0" }}>
-            <InboxOutlined style={{ fontSize: 36, color: "#ff6c37" }} />
-          </p>
-          <p style={{ fontSize: 14 }}>点击选择或拖拽 JSON 文件到此处</p>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            支持 Postman Collection v2 / v2.1 导出格式
-          </Typography.Text>
-        </Upload.Dragger>
+        {source === "file" ? (
+          <Upload.Dragger
+            accept=".json,application/json"
+            maxCount={1}
+            showUploadList={false}
+            disabled={importing}
+            beforeUpload={(file) => {
+              void handleFile(file);
+              return false; // 阻止 antd 自动上传，本地解析
+            }}
+          >
+            <p style={{ margin: "8px 0" }}>
+              <InboxOutlined style={{ fontSize: 36, color: "#ff6c37" }} />
+            </p>
+            <p style={{ fontSize: 14 }}>点击选择或拖拽 JSON 文件到此处</p>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              支持 RabbitPost Collection 导出格式，兼容 Postman Collection v2 / v2.1
+            </Typography.Text>
+          </Upload.Dragger>
+        ) : (
+          <div>
+            <Space.Compact style={{ width: "100%" }}>
+              <Input
+                placeholder="https://…/collection.json"
+                value={url}
+                disabled={importing}
+                onChange={(e) => setUrl(e.target.value)}
+                onPressEnter={() => void handleUrlImport()}
+              />
+              <Button
+                type="primary"
+                disabled={!url.trim() || importing}
+                onClick={() => void handleUrlImport()}
+              >
+                导入
+              </Button>
+            </Space.Compact>
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 12, display: "block", marginTop: 8 }}
+            >
+              支持 RabbitPost 分享链接，以及任意直接返回 Collection JSON 的链接
+            </Typography.Text>
+          </div>
+        )}
       </Spin>
     </Modal>
   );

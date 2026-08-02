@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
-import { useTabsStore } from "../stores/tabs";
+import { Button, Modal, Space } from "antd";
+import { createElement, useEffect, useRef } from "react";
+import { isTabDirty, useTabsStore } from "../stores/tabs";
 
 /** 各 tab 编辑器注册的 Save 处理器（key = tab.key） */
 const saveHandlers = new Map<string, () => void>();
@@ -35,4 +36,89 @@ export function useGlobalSaveShortcut() {
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, []);
+}
+
+/** 全局拦截 Cmd/Ctrl+Alt+W：关闭当前激活的工作 tab（Cmd+W 被浏览器保留，无法拦截） */
+export function useGlobalCloseTabShortcut() {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.altKey &&
+        !e.shiftKey &&
+        e.key.toLowerCase() === "w"
+      ) {
+        e.preventDefault();
+        const { activeKey } = useTabsStore.getState();
+        if (activeKey) confirmCloseTab(activeKey);
+      }
+    };
+    // capture 阶段监听，保证输入框 / 代码编辑器聚焦时也能拦截
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+}
+
+/** 关闭 tab：有未保存修改时弹二次确认（保存并关闭 / 直接关闭 / 取消），无修改直接关闭 */
+export function confirmCloseTab(key: string) {
+  const { tabs, closeTab } = useTabsStore.getState();
+  const tab = tabs.find((t) => t.key === key);
+  if (!tab) return;
+  if (!isTabDirty(tab)) {
+    closeTab(key);
+    return;
+  }
+
+  /** 触发该 tab 的保存，保存成功（dirty 清除）后再关闭；用户取消保存则不关闭 */
+  const saveAndClose = () => {
+    const save = saveHandlers.get(key);
+    if (!save) return;
+    // 订阅 store：等该 tab 被 markSaved（不再是 dirty）后关闭并退订
+    const unsub = useTabsStore.subscribe((s) => {
+      const t = s.tabs.find((x) => x.key === key);
+      // tab 已被别处关闭，或保存完成：退订并关闭弹窗/tab
+      if (!t) {
+        unsub();
+        return;
+      }
+      if (!isTabDirty(t)) {
+        unsub();
+        useTabsStore.getState().closeTab(key);
+      }
+    });
+    save();
+  };
+
+  const modal = Modal.confirm({
+    title: "关闭标签页",
+    content: `「${tab.name}」有未保存的修改，关闭后将丢失。`,
+    // 三按钮：取消 / 直接关闭 / 保存并关闭（用 createElement 避免本文件改为 .tsx）
+    footer: createElement(
+      Space,
+      { style: { display: "flex", justifyContent: "flex-end" } },
+      createElement(Button, { onClick: () => modal.destroy() }, "取消"),
+      createElement(
+        Button,
+        {
+          danger: true,
+          onClick: () => {
+            modal.destroy();
+            closeTab(key);
+          },
+        },
+        "直接关闭",
+      ),
+      createElement(
+        Button,
+        {
+          type: "primary",
+          onClick: () => {
+            modal.destroy();
+            saveAndClose();
+          },
+        },
+        "保存并关闭",
+      ),
+    ),
+  });
 }

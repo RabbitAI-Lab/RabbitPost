@@ -1,0 +1,858 @@
+{
+  "info": {
+    "name": "RabbitPost Mock Server",
+    "description": "Complete test suite for validating request functionality against the mock server",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is ok', () => pm.expect(pm.response.json().status).to.equal('ok'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Echo",
+      "item": [
+        {
+          "name": "GET Echo with Params",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/echo?param1=value1&param2=value2",
+            "header": [
+              {
+                "key": "X-Custom-Header",
+                "value": "test-value"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Method is GET', () => pm.expect(pm.response.json().method).to.equal('GET'));",
+                  "pm.test('Query params echoed', () => {",
+                  "  const query = pm.response.json().query;",
+                  "  pm.expect(query.param1).to.equal('value1');",
+                  "  pm.expect(query.param2).to.equal('value2');",
+                  "});",
+                  "pm.test('Custom header echoed', () => {",
+                  "  pm.expect(pm.response.json().headers['x-custom-header']).to.equal('test-value');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Echo with JSON",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/echo",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"test\",\"value\":123}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Body echoed', () => {",
+                  "  const body = pm.response.json().body;",
+                  "  pm.expect(body.name).to.equal('test');",
+                  "  pm.expect(body.value).to.equal(123);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "HTTP Methods",
+      "item": [
+        {
+          "name": "GET /get",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/get"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Method is GET', () => pm.expect(pm.response.json().method).to.equal('GET'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /post",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/post",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"test\":true}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Method is POST', () => pm.expect(pm.response.json().method).to.equal('POST'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT /put",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/put"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Method is PUT', () => pm.expect(pm.response.json().method).to.equal('PUT'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /patch",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/patch"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Method is PATCH', () => pm.expect(pm.response.json().method).to.equal('PATCH'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE /delete",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/delete"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Method is DELETE', () => pm.expect(pm.response.json().method).to.equal('DELETE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "HEAD /head",
+          "request": {
+            "method": "HEAD",
+            "url": "{{baseUrl}}/head"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No body', () => pm.expect(pm.response.text()).to.be.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OPTIONS /options",
+          "request": {
+            "method": "OPTIONS",
+            "url": "{{baseUrl}}/options"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has CORS headers', () => pm.response.headers.has('Access-Control-Allow-Origin'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Basic Auth Success",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/basic/testuser/testpass",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Basic {{basicAuthToken}}"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Authenticated', () => pm.expect(pm.response.json().authenticated).to.be.true);",
+                  "pm.test('User is testuser', () => pm.expect(pm.response.json().user).to.equal('testuser'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Basic Auth Failure",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/basic/testuser/testpass",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Basic invalid"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Not authenticated', () => pm.expect(pm.response.json().authenticated).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bearer Token Success",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/bearer/my-secret-token",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer my-secret-token"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Authenticated', () => pm.expect(pm.response.json().authenticated).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API Key in Query",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/api-key?api_key=query-key-123"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Authenticated', () => pm.expect(pm.response.json().authenticated).to.be.true);",
+                  "pm.test('Location is query', () => pm.expect(pm.response.json().location).to.equal('query'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "API Key in Header",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/api-key",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "header-key-456"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Authenticated', () => pm.expect(pm.response.json().authenticated).to.be.true);",
+                  "pm.test('Location is header', () => pm.expect(pm.response.json().location).to.equal('header'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Digest Auth Challenge",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/digest/testuser/testpass"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('Has WWW-Authenticate', () => pm.response.headers.has('WWW-Authenticate'));",
+                  "pm.test('Is Digest', () => {",
+                  "  const auth = pm.response.headers.get('WWW-Authenticate');",
+                  "  pm.expect(auth).to.include('Digest');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OAuth2 Bearer Token",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/oauth2/authorize?client_id=test-client&redirect_uri=http://localhost/callback&response_type=code"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "pm.test('Has Location', () => pm.response.headers.has('Location'));",
+                  "pm.test('Has code', () => {",
+                  "  const location = pm.response.headers.get('Location');",
+                  "  pm.expect(location).to.include('code=');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OAuth2 Token Exchange",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/oauth2/token",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"grant_type\":\"authorization_code\",\"code\":\"mock_auth_code\",\"client_id\":\"test-client\",\"client_secret\":\"test-secret\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has access_token', () => pm.expect(pm.response.json().access_token).to.exist);",
+                  "pm.test('Token type is Bearer', () => pm.expect(pm.response.json().token_type).to.equal('Bearer'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Body Types",
+      "item": [
+        {
+          "name": "JSON Body Validation",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/body/json",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"John\",\"email\":\"john@example.com\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Valid', () => pm.expect(pm.response.json().valid).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Form URL Encoded",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/body/form",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "testuser"
+                },
+                {
+                  "key": "password",
+                  "value": "testpass"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Form data received', () => {",
+                  "  const form = pm.response.json().form;",
+                  "  pm.expect(form.username).to.equal('testuser');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GraphQL Query",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/body/graphql",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query GetUser($id: ID!) { user(id: $id) { name } }\",\"variables\":{\"id\":\"123\"}}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has data', () => pm.expect(pm.response.json().data).to.exist);",
+                  "pm.test('User name returned', () => {",
+                  "  pm.expect(pm.response.json().data.user.name).to.equal('Mock User');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "XML Body",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/body/xml",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<root><item>value</item></root>"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Valid XML', () => pm.expect(pm.response.json().valid).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Plain Text Body",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/body/text",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "plain text content"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Text received', () => pm.expect(pm.response.json().received).to.equal('plain text content'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Status Codes",
+      "item": [
+        {
+          "name": "200 OK",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/status/200"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "201 Created",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/status/201"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "204 No Content",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/status/204"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));",
+                  "pm.test('No body', () => pm.expect(pm.response.text()).to.be.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 Not Found",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/status/404"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "500 Server Error",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/status/500"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 500', () => pm.response.to.have.status(500));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Advanced",
+      "item": [
+        {
+          "name": "Delay 100ms",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/advanced/delay/0.1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Delayed', () => pm.expect(pm.response.json().delayed).to.equal(0.1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Redirect Chain",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/advanced/redirect/2"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "pm.test('Has Location', () => pm.response.headers.has('Location'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cookies",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/advanced/cookies",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "session=abc123; theme=dark"
+              }
+            ]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Cookies parsed', () => {",
+                  "  const cookies = pm.response.json().received;",
+                  "  pm.expect(cookies.session).to.equal('abc123');",
+                  "  pm.expect(cookies.theme).to.equal('dark');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Set Cookie",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/advanced/set-cookie?name=test&value=123&Path=/"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Cookie set', () => pm.response.headers.has('Set-Cookie'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Large Response (1KB)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/advanced/large/1024"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Size is 1KB', () => pm.expect(pm.response.text().length).to.equal(1024));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Binary Response",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/advanced/binary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type is PNG', () => {",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.equal('image/png');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Custom Response Headers",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/advanced/response-headers?X-Custom=value1&X-Another=value2"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Custom header set', () => {",
+                  "  pm.expect(pm.response.headers.get('X-Custom')).to.equal('value1');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cache Headers",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/advanced/cache/60"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has Cache-Control', () => {",
+                  "  pm.expect(pm.response.headers.get('Cache-Control')).to.include('max-age=60');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3090"
+    },
+    {
+      "key": "basicAuthToken",
+      "value": "dGVzdHVzZXI6dGVzdHBhc3M="
+    }
+  ]
+}

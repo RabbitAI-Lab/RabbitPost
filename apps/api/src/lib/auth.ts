@@ -1,9 +1,10 @@
+import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
-import type { User } from "@rabbitpost/shared";
+import type { ApiKey, User } from "@rabbitpost/shared";
 import { db } from "../db";
-import { users } from "../db/schema";
+import { apiKeys, users } from "../db/schema";
 import { casdoorConfig, env, isCasdoorConfigured } from "../env";
 
 const SESSION_COOKIE = "rp_session";
@@ -172,6 +173,55 @@ export async function getSessionUser(): Promise<User | null> {
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// 个人 API Key（CLI 凭证，Authorization: Bearer rpk_...）
+// ---------------------------------------------------------------------------
+
+const API_KEY_PREFIX = "rpk_";
+
+/** 签发 API Key：明文只返回一次，库里只存 sha256 摘要 */
+export function issueApiKey(): { token: string; keyHash: string; keyPrefix: string } {
+  const token = `${API_KEY_PREFIX}${crypto.randomBytes(32).toString("base64url")}`;
+  return {
+    token,
+    keyHash: hashApiKey(token),
+    keyPrefix: token.slice(0, API_KEY_PREFIX.length + 8),
+  };
+}
+
+export function hashApiKey(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+export function toApiKey(row: typeof apiKeys.$inferSelect): ApiKey {
+  return {
+    id: row.id,
+    name: row.name,
+    keyPrefix: row.keyPrefix,
+    lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/** 读取 Bearer API Key 对应的用户；非 rpk_ 凭证或无效时返回 null */
+export async function getApiKeyUser(req: Request): Promise<User | null> {
+  const header = req.headers.get("authorization") ?? "";
+  const token = header.replace(/^Bearer\s+/i, "").trim();
+  if (!token.startsWith(API_KEY_PREFIX)) return null;
+  const [row] = await db
+    .select({ key: apiKeys, user: users })
+    .from(apiKeys)
+    .innerJoin(users, eq(apiKeys.userId, users.id))
+    .where(eq(apiKeys.keyHash, hashApiKey(token)))
+    .limit(1);
+  if (!row) return null;
+  await db
+    .update(apiKeys)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(apiKeys.id, row.key.id));
+  return toUser(row.user);
 }
 
 export { isCasdoorConfigured };

@@ -6,6 +6,9 @@ dist/
 .next/
 out/
 
+# rust (Runner CLI)
+target/
+
 # env & secrets
 .env
 .env.local
@@ -30,3 +33,5 @@ pnpm-debug.log*
 
 # drizzle generated (keep migrations tracked, ignore tmp)
 drizzle/meta/_journal.json.bak
+apps/api/public/cli/
+/.tmp-rustc

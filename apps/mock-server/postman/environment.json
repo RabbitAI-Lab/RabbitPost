@@ -1,0 +1,17 @@
+{
+  "id": "mock-server-env",
+  "name": "Mock Server Environment",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3090",
+      "enabled": true
+    },
+    {
+      "key": "basicAuthToken",
+      "value": "dGVzdHVzZXI6dGVzdHBhc3M=",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment"
+}

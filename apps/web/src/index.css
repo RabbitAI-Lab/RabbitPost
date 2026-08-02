@@ -238,6 +238,20 @@ input.ant-input.code-font {
   box-shadow: none;
   border: 1px solid #f0f0f0;
   border-radius: 6px;
+  /* 工具条紧凑化：默认 48px 工具条 + 38px 按钮 + 24px 水平内边距过大，
+     覆盖 CSS 变量缩小到与整体 UI 一致的紧凑尺寸（下拉项高度同源随之收紧） */
+  --height-toolbar: 28px;
+  --height-button: 20px;
+  --toolbar-icon-size: 12px;
+  --toolbar-padding: 1px 6px;
+  --toolbar-shadow: none;
+  --toolbar-btn-padding: 0 5px;
+  --toolbar-btn-radius: 4px;
+}
+
+/* 工具条默认 line-height: 2.8 会撑高，重置为正常行高 */
+.md-cherry .cherry-toolbar {
+  line-height: 1.5;
 }
 
 /* spec 定义编辑器（CodeMirror）：撑满分栏高度，字号与其它代码区域一致 */

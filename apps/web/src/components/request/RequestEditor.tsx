@@ -1,26 +1,28 @@
-import { DownOutlined, SaveOutlined, SendOutlined } from "@ant-design/icons";
+import {
+  DownOutlined,
+  RollbackOutlined,
+  SaveOutlined,
+  SendOutlined,
+} from "@ant-design/icons";
 import {
   App,
   Button,
   Dropdown,
   Input,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Splitter,
 } from "antd";
 import { useState } from "react";
-import { HTTP_METHODS, resolveRequestSettings, substituteVariables } from "@rabbitpost/shared";
-import { collectionsApi, executeApi } from "../../api";
+import { HTTP_METHODS } from "@rabbitpost/shared";
+import { casesApi, collectionsApi, scenariosApi } from "../../api";
+import { executeRequestConfig } from "../../lib/execute";
 import { useTabSaveHandler } from "../../lib/save-shortcut";
 import { useAppStore } from "../../stores/app";
-import {
-  cookieHeaderForUrl,
-  hostnameOf,
-  useCookiesStore,
-} from "../../stores/cookies";
+import { useCasesStore } from "../../stores/cases";
 import { isTabDirty, useTabsStore, type RequestTab } from "../../stores/tabs";
-import { newKvItem } from "../common/KeyValueEditor";
 import VarInput from "../common/variable/VarInput";
 import RequestConfigTabs from "./RequestConfigTabs";
 import RequestTitleBar from "./RequestTitleBar";
@@ -39,8 +41,15 @@ export default function RequestEditor({ tab }: Props) {
     collections,
     refreshCollectionTree,
   } = useAppStore();
-  const { updateConfig, setSending, setSaving, setResponse, markSaved, renameTab } =
-    useTabsStore();
+  const {
+    updateConfig,
+    replaceConfig,
+    setSending,
+    setSaving,
+    setResponse,
+    markSaved,
+    renameTab,
+  } = useTabsStore();
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   /** 弹窗模式：save = 保存草稿；saveAs = 另存为新数据（原数据不动） */
   const [saveAsMode, setSaveAsMode] = useState(false);
@@ -63,56 +72,15 @@ export default function RequestEditor({ tab }: Props) {
     }
     setSending(tab.key, true);
     try {
-      // 用当前环境变量解析 URL，从 Cookie Jar 取匹配的 Cookie 随请求发送（同 Postman）
-      const settings = resolveRequestSettings(tab.config.settings);
-      const env = environments.find((e) => e.id === activeEnvironmentId);
-      const vars = Object.fromEntries(
-        (env?.variables ?? [])
-          .filter((v) => v.enabled && v.key)
-          .map((v) => [v.key, v.value]),
-      );
-      const resolvedUrl = substituteVariables(tab.config.url, vars);
-      // Disable cookie jar：本请求不带上已存 cookie
-      const jarCookie = settings.disableCookieJar
-        ? ""
-        : cookieHeaderForUrl(resolvedUrl, useCookiesStore.getState().domains);
-      let request = tab.config;
-      if (jarCookie) {
-        const userCookie = tab.config.headers.find(
-          (h) => h.enabled && h.key.toLowerCase() === "cookie",
-        );
-        // 用户已手写 Cookie 头时合并到同一个头，避免重复 Cookie 头
-        request = userCookie
-          ? {
-              ...tab.config,
-              headers: tab.config.headers.map((h) =>
-                h.id === userCookie.id
-                  ? { ...h, value: h.value ? `${h.value}; ${jarCookie}` : jarCookie }
-                  : h,
-              ),
-            }
-          : {
-              ...tab.config,
-              headers: [
-                ...tab.config.headers,
-                newKvItem({ key: "Cookie", value: jarCookie }),
-              ],
-            };
-      }
-      const result = await executeApi.run({
+      const result = await executeRequestConfig({
         workspaceId: currentWorkspaceId,
         environmentId: activeEnvironmentId,
+        environments,
         name: tab.name,
-        request,
+        config: tab.config,
+        itemId: tab.itemId ?? undefined, // 传入 Collection Item ID，用于 Runner 模式
       });
       setResponse(tab.key, result);
-      // 响应的 Set-Cookie 自动写回 Cookie Jar（同 Postman）；Disable cookie jar 时不写回
-      const host = hostnameOf(resolvedUrl);
-      if (!settings.disableCookieJar && host && result.cookies?.length) {
-        useCookiesStore.getState().storeResponseCookies(host, result.cookies);
-      }
-      // 通知 History 面板刷新
-      window.dispatchEvent(new CustomEvent("rabbitpost:history-updated"));
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -121,6 +89,33 @@ export default function RequestEditor({ tab }: Props) {
   };
 
   const handleSave = async () => {
+    // 场景步骤 tab：保存回 scenario_steps，不影响接口配置
+    if (tab.stepId) {
+      setSaving(tab.key, true);
+      try {
+        await scenariosApi.updateStep(tab.stepId, { request: tab.config });
+        markSaved(tab.key, tab.itemId!, tab.collectionId!, tab.name);
+        message.success("已保存");
+        // 通知 ScenarioEditor 刷新步骤列表
+        useTabsStore.getState().onScenarioStepSaved?.();
+      } finally {
+        setSaving(tab.key, false);
+      }
+      return;
+    }
+    // 用例 tab：保存回用例快照，不影响接口配置
+    if (tab.caseId) {
+      setSaving(tab.key, true);
+      try {
+        const updated = await casesApi.update(tab.caseId, { request: tab.config });
+        useCasesStore.getState().upsert(updated);
+        markSaved(tab.key, tab.itemId!, tab.collectionId!, tab.name);
+        message.success("已保存");
+      } finally {
+        setSaving(tab.key, false);
+      }
+      return;
+    }
     if (tab.itemId) {
       // 已有关联 item：直接更新
       setSaving(tab.key, true);
@@ -140,6 +135,22 @@ export default function RequestEditor({ tab }: Props) {
       setSaveName(tab.name);
       setSaveCollectionId(tab.collectionId ?? collections[0]?.id ?? null);
       setSaveModalOpen(true);
+    }
+  };
+
+  /** Reset from request：用接口当前配置覆盖用例快照（Popconfirm 二次确认） */
+  const handleResetFromRequest = async () => {
+    if (!tab.caseId) return;
+    setSaving(tab.key, true);
+    try {
+      const updated = await casesApi.reset(tab.caseId);
+      useCasesStore.getState().upsert(updated);
+      replaceConfig(tab.key, updated.request);
+      markSaved(tab.key, tab.itemId!, tab.collectionId!, tab.name);
+      setResponse(tab.key, null);
+      message.success("已从接口重新继承配置");
+    } finally {
+      setSaving(tab.key, false);
     }
   };
 
@@ -186,28 +197,47 @@ export default function RequestEditor({ tab }: Props) {
       <RequestTitleBar
         tab={tab}
         extra={
-          <Space.Compact>
-            <Button
-              size="small"
-              icon={<SaveOutlined />}
-              loading={tab.saving}
-              disabled={!dirty && !!tab.itemId}
-              onClick={() => void handleSave()}
-            >
-              Save
-            </Button>
-            <Dropdown
-              menu={{
-                items: [{ key: "saveAs", label: "Save As..." }],
-                onClick: ({ key }) => {
-                  if (key === "saveAs") handleSaveAs();
-                },
-              }}
-              trigger={["click"]}
-            >
-              <Button size="small" icon={<DownOutlined />} />
-            </Dropdown>
-          </Space.Compact>
+          <Space size={8}>
+            {/* 用例 tab：从接口重新继承配置 */}
+            {tab.caseId && !tab.stepId && (
+              <Popconfirm
+                title="从接口重新继承配置？"
+                description="将用接口当前配置覆盖该用例，已有修改会丢失。"
+                okText="重置"
+                cancelText="取消"
+                onConfirm={() => void handleResetFromRequest()}
+              >
+                <Button size="small" icon={<RollbackOutlined />} loading={tab.saving}>
+                  Reset from request
+                </Button>
+              </Popconfirm>
+            )}
+            <Space.Compact>
+              <Button
+                size="small"
+                icon={<SaveOutlined />}
+                loading={tab.saving}
+                disabled={!dirty && !!tab.itemId}
+                onClick={() => void handleSave()}
+              >
+                Save
+              </Button>
+              {/* Save As 只对普通请求有意义（另存为新条目） */}
+              {!tab.caseId && !tab.stepId && (
+                <Dropdown
+                  menu={{
+                    items: [{ key: "saveAs", label: "Save As..." }],
+                    onClick: ({ key }) => {
+                      if (key === "saveAs") handleSaveAs();
+                    },
+                  }}
+                  trigger={["click"]}
+                >
+                  <Button size="small" icon={<DownOutlined />} />
+                </Dropdown>
+              )}
+            </Space.Compact>
+          </Space>
         }
       />
 

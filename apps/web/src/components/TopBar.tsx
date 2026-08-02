@@ -1,10 +1,14 @@
 import {
+  BankOutlined,
   CheckOutlined,
+  CodeOutlined,
   DownOutlined,
   LogoutOutlined,
   PlusOutlined,
+  ReadOutlined,
   SettingOutlined,
   TeamOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import {
   App,
@@ -14,11 +18,14 @@ import {
   Input,
   Modal,
   Space,
+  Tooltip,
 } from "antd";
 import type { MenuProps } from "antd";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { teamsApi } from "../api";
 import { useAppStore } from "../stores/app";
+import { useTabsStore } from "../stores/tabs";
 import TeamManagerModal from "./TeamManagerModal";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 
@@ -32,12 +39,17 @@ export default function TopBar() {
     refreshTeams,
     signOut,
   } = useAppStore();
+  const openCli = useTabsStore((s) => s.openCli);
+  const openProfile = useTabsStore((s) => s.openProfile);
+  const navigate = useNavigate();
 
   const [teamModalOpen, setTeamModalOpen] = useState(false);
   const [createTeamOpen, setCreateTeamOpen] = useState(false);
   const [teamForm] = Form.useForm<{ name: string }>();
 
   const currentTeam = teams.find((t) => t.id === currentTeamId);
+  // CLI 菜单仅团队管理员可见（Runner Token 属于团队级凭证）
+  const isTeamAdmin = currentTeam?.role === "owner" || currentTeam?.role === "admin";
 
   const menuItems: MenuProps["items"] = [
     {
@@ -72,6 +84,20 @@ export default function TopBar() {
           onClick: () => setTeamModalOpen(true),
         },
       ],
+    },
+    { type: "divider" },
+    {
+      key: "enterprise-console",
+      icon: <BankOutlined />,
+      label: "企业控制台",
+      onClick: () => navigate("/console"),
+    },
+    { type: "divider" },
+    {
+      key: "profile",
+      icon: <UserOutlined />,
+      label: "个人中心",
+      onClick: () => openProfile(),
     },
     { type: "divider" },
     {
@@ -117,6 +143,30 @@ export default function TopBar() {
       >
         <WorkspaceSwitcher />
       </div>
+
+      {/* CLI 入口：团队管理员可见，点击直接进入 RabbitPost CLI */}
+      {isTeamAdmin && (
+        <Tooltip title="CLI">
+          <CodeOutlined
+            style={{ cursor: "pointer", fontSize: 15 }}
+            onClick={() => openCli("rabbitpost-cli")}
+          />
+        </Tooltip>
+      )}
+
+      {/* 企业控制台入口 */}
+      <Tooltip title="企业控制台">
+        <BankOutlined
+          style={{ cursor: "pointer", fontSize: 15 }}
+          onClick={() => navigate("/console")}
+        />
+      </Tooltip>
+
+      {/* 文档入口：新标签页打开独立 docs 站 */}
+      <ReadOutlined
+        style={{ cursor: "pointer", fontSize: 14 }}
+        onClick={() => window.open(import.meta.env.VITE_DOCS_URL ?? "http://localhost:5180", "_blank")}
+      />
 
       {/* 用户菜单 */}
       <Dropdown menu={{ items: menuItems }}>

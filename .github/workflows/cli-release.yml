@@ -1,0 +1,143 @@
+name: cli-release
+
+# 发布 RabbitPost CLI 预编译包：
+# - main 分支上 CLI 相关代码（apps/cli、crates/rp-core）变更：自动构建并刷新 cli-latest 滚动 Release
+# - PR：仅跨平台构建验证（不发布）
+# - 推送 cli-v* tag：产出带版本号的 Release，同时刷新 cli-latest
+# - 手动 dispatch：仅刷新 cli-latest（网页下载链接固定指向它）
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/cli/**"
+      - "crates/rp-core/**"
+      - ".github/workflows/cli-release.yml"
+    tags: ["cli-v*"]
+  pull_request:
+    paths:
+      - "apps/cli/**"
+      - "crates/rp-core/**"
+      - ".github/workflows/cli-release.yml"
+
+permissions:
+  contents: write
+
+# 同一 ref 上排队执行，避免并发刷新滚动 Release 互相覆盖
+concurrency:
+  group: cli-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            asset: rabbitpost-macos-arm64
+          - name: macos-x64
+            os: macos-13
+            target: x86_64-apple-darwin
+            asset: rabbitpost-macos-x64
+          - name: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            asset: rabbitpost-linux-x64
+          - name: linux-arm64
+            os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            asset: rabbitpost-linux-arm64
+            cross: true
+          - name: windows-x64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            asset: rabbitpost-windows-x64.exe
+          # windows-arm64 暂缺：rquickjs-sys 未附带 aarch64-pc-windows-msvc
+          # 预生成 bindings（需 bindgen 特性 + libclang 现场生成），待后续补齐
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cli-release
+          key: ${{ matrix.target }}
+
+      # linux-arm64 交叉编译：rquickjs 的 C 代码需要目标架构的 gcc
+      - name: install cross toolchain (linux arm64)
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: build
+        run: cargo build --release --locked --manifest-path apps/cli/Cargo.toml --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+
+      - name: package
+        shell: bash
+        run: |
+          mkdir -p dist
+          bin="apps/cli/target/${{ matrix.target }}/release/rabbitpost"
+          if [ -f "$bin.exe" ]; then bin="$bin.exe"; fi
+          cp "$bin" "dist/${{ matrix.asset }}"
+          cd dist
+          shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.name }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    # PR 只做构建验证，不发布；push（main/tag）与手动 dispatch 才发布
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          path: dist
+          merge-multiple: true
+
+      # cli-latest：滚动 Release，内容每次全量刷新
+      - name: update rolling release (cli-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: cli-latest
+          name: RabbitPost CLI (latest)
+          body: |
+            RabbitPost CLI 预编译包（随 CLI 代码更新自动重建）。
+
+            - rabbitpost-macos-arm64：macOS Apple Silicon
+            - rabbitpost-macos-x64：macOS Intel
+            - rabbitpost-linux-x64：Linux x86_64（glibc ≥ 2.35）
+            - rabbitpost-linux-arm64：Linux ARM64（glibc ≥ 2.35）
+            - rabbitpost-windows-x64.exe：Windows x86_64
+
+            每个包附带同名 .sha256 校验文件。
+          prerelease: false
+          files: dist/*
+
+      # 推送 cli-v* tag 时额外产出带版本号的存档 Release
+      - name: publish versioned release (tag builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: RabbitPost CLI ${{ env.RELEASE_TAG }}
+          prerelease: false
+          files: dist/*

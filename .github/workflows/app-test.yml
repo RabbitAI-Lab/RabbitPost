@@ -1,0 +1,63 @@
+name: app-test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "packages/shared/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/app-test.yml"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - "packages/shared/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/app-test.yml"
+  workflow_dispatch:
+
+jobs:
+  ts:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: install
+        run: pnpm install --frozen-lockfile
+
+      - name: typecheck
+        run: pnpm typecheck
+
+      # API 路由级测试：独立测试库 rabbitpost_test（globalSetup 自动建库 + drizzle push）
+      - name: test api
+        run: pnpm --filter @rabbitpost/api test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/rabbitpost_test
+
+      # Web store / 组件测试（jsdom，无外部依赖）
+      - name: test web
+        run: pnpm --filter @rabbitpost/web test

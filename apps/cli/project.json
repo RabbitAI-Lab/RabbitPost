@@ -1,0 +1,36 @@
+{
+  "name": "@rabbitpost/cli",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/cli/src",
+  "targets": {
+    "build-cli": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo build --release",
+        "cwd": "apps/cli"
+      }
+    },
+    "check-cli": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo clippy --all-targets -- -D warnings",
+        "cwd": "apps/cli"
+      }
+    },
+    "test-cli": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cargo test",
+        "cwd": "apps/cli"
+      }
+    },
+    "package-cli": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bash scripts/package.sh",
+        "cwd": "apps/cli"
+      }
+    }
+  }
+}

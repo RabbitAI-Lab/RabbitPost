@@ -1,0 +1,42 @@
+name: cli-test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/cli/**"
+      - "crates/rp-core/**"
+      - ".github/workflows/cli-test.yml"
+  pull_request:
+    paths:
+      - "apps/cli/**"
+      - "crates/rp-core/**"
+      - ".github/workflows/cli-test.yml"
+  workflow_dispatch:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: cli
+
+      # rp-core 单元测试（脚本沙箱 / 执行引擎 / API 客户端契约）
+      - name: test rp-core
+        run: cargo test --manifest-path crates/rp-core/Cargo.toml --locked
+
+      # CLI 单元测试 + 功能测试（assert_cmd 真实二进制 + wiremock 模拟服务端）
+      - name: test rabbitpost CLI
+        run: cargo test --manifest-path apps/cli/Cargo.toml --locked
+
+      - name: clippy
+        run: |
+          cargo clippy --manifest-path crates/rp-core/Cargo.toml --all-targets --locked -- -D warnings
+          cargo clippy --manifest-path apps/cli/Cargo.toml --all-targets --locked -- -D warnings

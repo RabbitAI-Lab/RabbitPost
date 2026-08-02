@@ -20,3 +20,15 @@ export function findFolderTrail(
   }
   return null;
 }
+
+/** 在树中查找节点名称；未找到返回 null */
+export function findNodeName(nodes: TrailNode[], id: string): string | null {
+  for (const node of nodes) {
+    if (node.id === id) return node.name;
+    if (node.children?.length) {
+      const found = findNodeName(node.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}

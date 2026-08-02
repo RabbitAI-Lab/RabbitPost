@@ -2,7 +2,7 @@ import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { Collection } from "@rabbitpost/shared";
 import { db } from "../../../../../../db";
-import { collections } from "../../../../../../db/schema";
+import { collections, collectionItems } from "../../../../../../db/schema";
 import {
   handleRoute,
   HttpError,
@@ -60,6 +60,15 @@ export const POST = handleRoute<Ctx>(async (req, ctx, user) => {
     })
     .returning();
   if (!col) throw new Error("Failed to create collection");
+  // 自动创建「场景测试」根目录（isScenarioRoot=true，不可删除/移出）
+  await db.insert(collectionItems).values({
+    collectionId: col.id,
+    parentId: null,
+    type: "folder",
+    name: "场景测试",
+    sortOrder: -1,
+    isScenarioRoot: true,
+  });
   return ok(toCollection(col), { status: 201 });
 });
 
