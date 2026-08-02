@@ -65,7 +65,7 @@ function SettingRow({
   return (
     <div style={{ display: "flex", alignItems: "flex-start", gap: 24, padding: "10px 0" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center" }}>
+        <div style={{ fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center" }}>
           {title}
           {badge}
         </div>

@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import type {
   ExecuteResult,
   RequestConfig,
+  ResponseCookie,
   RunJob,
   RunJobResult,
   RunnerJobItem,
@@ -13,7 +14,13 @@ import type {
 import { db } from "../db";
 import { runJobResults, runJobs, runners } from "../db/schema";
 import { HttpError } from "./http";
-import { expandRunTarget, loadRunnerVariables, toRunJob, toRunJobResult } from "./runner";
+import {
+  collectionIdOfItem,
+  expandRunTarget,
+  loadRunnerVariables,
+  toRunJob,
+  toRunJobResult,
+} from "./runner";
 import { selectRunnerForJob } from "./embedded-runner";
 
 const DEFAULT_TIMEOUT_MS = 60_000; // 默认 60 秒超时
@@ -68,12 +75,14 @@ export async function dispatchAndWait(options: DispatchOptions): Promise<Execute
       name: targetName,
       request: requestConfig,
     }];
-    variables = await loadRunnerVariables(environmentId);
+    // targetId 为请求条目 id 时，解析所属 Collection 以加载 Collection 级变量
+    const colId = await collectionIdOfItem(targetId);
+    variables = await loadRunnerVariables(environmentId, colId);
   } else {
     // 从库中展开目标（Collection 或已保存的请求）
     const target = await expandRunTarget(targetType, targetId);
     items = target.items;
-    variables = await loadRunnerVariables(environmentId);
+    variables = await loadRunnerVariables(environmentId, target.collectionId);
   }
 
   // 3. 创建任务
@@ -160,29 +169,82 @@ function convertToExecuteResult(job: RunJob, result: RunJobResult): ExecuteResul
   }
 
   // 正常响应
+  const headers = result.responseHeaders ?? {};
   return {
     ok: result.ok,
     status: result.status ?? undefined,
     statusText: result.statusText ?? undefined,
-    headers: result.responseHeaders ?? {},
+    headers,
     bodyText: result.responseBody ?? undefined,
     sizeBytes: result.sizeBytes ?? undefined,
     durationMs: result.durationMs ?? 0,
     testResults: result.testResults ?? [],
     consoleLogs: result.consoleLogs ?? [],
-    // 从 request 快照中提取 cookies（如果有）
-    cookies: extractCookiesFromRequest(result.request),
+    // 从响应的 Set-Cookie 头解析结构化 Cookie（Runner 合并后以 ", " 分隔）
+    cookies: parseResponseCookies(headers["set-cookie"]),
   };
 }
 
 /**
- * 从请求快照中提取 Cookie 头，解析为 ResponseCookie 数组。
- * 注意：这是简化实现，实际应该从响应的 Set-Cookie 解析。
- * 但 Runner 目前不上传 Set-Cookie，所以暂时从请求推断。
+ * 将合并后的 Set-Cookie 字符串拆分为单条 Cookie 原文，再逐条解析。
+ * 多条 Set-Cookie 在 HTTP 层以 ", " 分隔，但 expires 日期也含 ", "（如 "Thu, 31-Dec-37"），
+ * 因此用启发式：仅在 ", " 后面的片段看起来像 "name=value"（= 出现在 ; 之前）时才拆分。
  */
-function extractCookiesFromRequest(request: unknown): ExecuteResult["cookies"] {
-  // TODO: Runner 需要上报 Set-Cookie 响应头，这里暂时返回空
-  return [];
+function splitJoinedSetCookies(joined: string): string[] {
+  const cookies: string[] = [];
+  let current = "";
+  for (const part of joined.split(", ")) {
+    const eq = part.indexOf("=");
+    const semi = part.indexOf(";");
+    // 看起来像新 Cookie 起始：含 = 且 = 在 ; 之前（或无 ;）
+    const looksLikeNewCookie = eq > 0 && (semi === -1 || eq < semi);
+    if (looksLikeNewCookie && current) {
+      cookies.push(current.trim());
+      current = part;
+    } else {
+      current = current ? `${current}, ${part}` : part;
+    }
+  }
+  if (current.trim()) cookies.push(current.trim());
+  return cookies;
+}
+
+/** 与 executor.ts 的 parseSetCookies 等价的 Runner 路径实现 */
+function parseResponseCookies(setCookieHeader?: string): ResponseCookie[] {
+  if (!setCookieHeader) return [];
+  const raws = splitJoinedSetCookies(setCookieHeader);
+  const cookies: ResponseCookie[] = [];
+  for (const raw of raws) {
+    const segments = raw.split(";").map((s) => s.trim());
+    const first = segments.shift();
+    if (!first) continue;
+    const eq = first.indexOf("=");
+    if (eq <= 0) continue;
+    const cookie: ResponseCookie = {
+      name: first.slice(0, eq).trim(),
+      value: first.slice(eq + 1).trim(),
+    };
+    for (const seg of segments) {
+      const i = seg.indexOf("=");
+      const attr = (i === -1 ? seg : seg.slice(0, i)).trim().toLowerCase();
+      const val = i === -1 ? "" : seg.slice(i + 1).trim();
+      switch (attr) {
+        case "domain": cookie.domain = val; break;
+        case "path": cookie.path = val; break;
+        case "expires": cookie.expires = val; break;
+        case "max-age": {
+          const n = Number(val);
+          if (Number.isFinite(n)) cookie.maxAge = n;
+          break;
+        }
+        case "httponly": cookie.httpOnly = true; break;
+        case "secure": cookie.secure = true; break;
+        case "samesite": cookie.sameSite = val; break;
+      }
+    }
+    cookies.push(cookie);
+  }
+  return cookies;
 }
 
 function sleep(ms: number): Promise<void> {

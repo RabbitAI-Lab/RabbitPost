@@ -1,4 +1,9 @@
-import type { Environment, ExecuteResult, RequestConfig } from "@rabbitpost/shared";
+import type {
+  Environment,
+  ExecuteResult,
+  KeyValueItem,
+  RequestConfig,
+} from "@rabbitpost/shared";
 import { resolveRequestSettings, substituteVariables } from "@rabbitpost/shared";
 import { executeApi } from "../api";
 import { newKvItem } from "../components/common/KeyValueEditor";
@@ -16,15 +21,27 @@ export async function executeRequestConfig(args: {
   config: RequestConfig;
   /** Collection Item ID，用于 Runner 模式关联已保存的请求 */
   itemId?: string;
+  /** 所属 Collection 的变量（作用域为当前 Collection，优先级低于 Environment） */
+  collectionVariables?: KeyValueItem[];
 }): Promise<ExecuteResult> {
-  const { workspaceId, environmentId, environments, name, config, itemId } = args;
+  const { workspaceId, environmentId, environments, name, config, itemId, collectionVariables } =
+    args;
   const settings = resolveRequestSettings(config.settings);
-  const env = environments.find((e) => e.id === environmentId);
-  const vars = Object.fromEntries(
-    (env?.variables ?? [])
+  // 变量优先级：Collection 为底，Environment 覆盖（与服务端及 Postman 一致）
+  const colVars = Object.fromEntries(
+    (collectionVariables ?? [])
       .filter((v) => v.enabled && v.key)
       .map((v) => [v.key, v.value]),
   );
+  const env = environments.find((e) => e.id === environmentId);
+  const vars = {
+    ...colVars,
+    ...Object.fromEntries(
+      (env?.variables ?? [])
+        .filter((v) => v.enabled && v.key)
+        .map((v) => [v.key, v.value]),
+    ),
+  };
   const resolvedUrl = substituteVariables(config.url, vars);
   // Disable cookie jar：本请求不带上已存 cookie
   const jarCookie = settings.disableCookieJar

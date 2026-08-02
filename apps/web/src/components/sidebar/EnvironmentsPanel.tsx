@@ -101,10 +101,10 @@ export default function EnvironmentsPanel() {
                 <span style={{ width: 14, display: "inline-block" }} />
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <Typography.Text ellipsis style={{ fontSize: 12, display: "block" }}>
+                <Typography.Text ellipsis style={{ fontSize: 12, display: "block", color: "#6b6b6b" }}>
                   {env.name}
                 </Typography.Text>
-                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {env.variables.length} 个变量
                 </Typography.Text>
               </div>

@@ -19,7 +19,7 @@ import type {
 import { resolveRequestSettings, substituteVariables } from "@rabbitpost/shared";
 import { normalizeRequestAuth } from "@rabbitpost/shared";
 import { db } from "../db";
-import { environments, histories } from "../db/schema";
+import { collectionItems, collections, environments, histories } from "../db/schema";
 import { findHeader, sendRequest, type SendRequestOptions } from "./http-client";
 import { runUserScript } from "./pm-sandbox";
 import { applyAuth, parseDigestChallenge } from "./request-auth";
@@ -135,6 +135,28 @@ async function loadEnvironmentVariables(
   if (!envRow || envRow.workspaceId !== workspaceId) return {};
   const vars: VariableMap = {};
   for (const v of envRow.variables as EnvironmentVariable[]) {
+    if (v.enabled && v.key) vars[v.key] = v.value;
+  }
+  return vars;
+}
+
+/** Collection 级变量（优先级低于 Environment）；itemId 为请求条目时自动定位所属 Collection */
+async function loadCollectionVariables(itemId: string | undefined): Promise<VariableMap> {
+  if (!itemId) return {};
+  const [item] = await db
+    .select({ collectionId: collectionItems.collectionId })
+    .from(collectionItems)
+    .where(eq(collectionItems.id, itemId))
+    .limit(1);
+  if (!item) return {};
+  const [col] = await db
+    .select({ variables: collections.variables })
+    .from(collections)
+    .where(eq(collections.id, item.collectionId))
+    .limit(1);
+  if (!col?.variables) return {};
+  const vars: VariableMap = {};
+  for (const v of col.variables as EnvironmentVariable[]) {
     if (v.enabled && v.key) vars[v.key] = v.value;
   }
   return vars;
@@ -391,8 +413,10 @@ export async function executeRequest(
   const consoleLogs: ConsoleLogEntry[] = [];
   const startedAt = Date.now();
 
-  // 1. 环境变量
-  let vars = await loadEnvironmentVariables(input.environmentId, input.workspaceId);
+  // 1. 变量：Collection 级为底，Environment 覆盖（与 Postman 优先级一致）
+  const collectionVars = await loadCollectionVariables(input.itemId);
+  const envVars = await loadEnvironmentVariables(input.environmentId, input.workspaceId);
+  let vars: VariableMap = { ...collectionVars, ...envVars };
 
   // 2. 变量替换
   let config = substituteConfig(input.request, vars);

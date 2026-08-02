@@ -11,6 +11,7 @@ import {
 } from "../../../../../../lib/http";
 import { EMBEDDED_RUNNER_NAME } from "../../../../../../lib/embedded-runner";
 import { issueRunnerToken, toRunner } from "../../../../../../lib/runner";
+import { getTeamOrgId, notifyOrgAdmins } from "../../../../../../lib/org";
 
 type Ctx = { params: Promise<{ teamId: string }> };
 
@@ -76,5 +77,18 @@ export const POST = handleRoute<Ctx>(async (req, ctx, user) => {
     })
     .returning();
   if (!row) throw new Error("Failed to register runner");
+
+  // 通知企业管理员（如果团队属于企业）
+  const orgId = await getTeamOrgId(teamId);
+  if (orgId) {
+    await notifyOrgAdmins({
+      orgId,
+      actorId: user.id,
+      title: "新 Runner 注册",
+      body: `Runner「${row.name}」已在团队中注册`,
+      teamId,
+    });
+  }
+
   return ok<RunnerWithToken>({ runner: toRunner(row), token }, { status: 201 });
 });

@@ -79,6 +79,7 @@ export default function RequestEditor({ tab }: Props) {
         name: tab.name,
         config: tab.config,
         itemId: tab.itemId ?? undefined, // 传入 Collection Item ID，用于 Runner 模式
+        collectionVariables: collections.find((c) => c.id === tab.collectionId)?.variables,
       });
       setResponse(tab.key, result);
     } catch (e) {

@@ -590,7 +590,7 @@ function FieldRow({ field }: { field: FieldSpec }) {
 
   return (
     <>
-      <div style={{ fontSize: 13, paddingTop: 4, minWidth: 0 }}>{field.label}</div>
+      <div style={{ fontSize: 12, paddingTop: 4, minWidth: 0 }}>{field.label}</div>
       <div style={{ minWidth: 0 }}>{control}</div>
     </>
   );

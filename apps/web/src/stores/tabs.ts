@@ -7,6 +7,7 @@ import type {
   ExecuteResult,
   HistoryEntry,
   HttpMethod,
+  KeyValueItem,
   RequestCase,
   RequestConfig,
   Spec,
@@ -43,7 +44,9 @@ export interface CollectionTab {
   name: string;
   /** Overview 的 Markdown 内容（即 collection.description） */
   description: string;
-  /** 打开/保存时的快照，用于 dirty 判断 */
+  /** Collection 级变量（即 collection.variables） */
+  variables: KeyValueItem[];
+  /** 打开/保存时的快照（description + variables），用于 dirty 判断 */
   savedSnapshot: string;
   saving: boolean;
 }
@@ -159,6 +162,11 @@ function envSnapshot(name: string, variables: EnvironmentVariable[]): string {
   return JSON.stringify({ name, variables });
 }
 
+/** Collection tab 快照：同时跟踪 Overview 文档与 Collection 变量 */
+function collectionSnapshot(description: string, variables: KeyValueItem[]): string {
+  return JSON.stringify({ description, variables });
+}
+
 function specSnapshot(tab: Pick<SpecTab, "name" | "format" | "content">): string {
   return JSON.stringify({ name: tab.name, format: tab.format, content: tab.content });
 }
@@ -211,7 +219,9 @@ interface TabsState {
   markEnvironmentSaved: (key: string) => void;
   /** 更新 Collection/文件夹/Document tab 的 Markdown 内容 */
   updateDocDescription: (key: string, description: string) => void;
-  /** Overview 文档保存后刷新快照 */
+  /** 更新 Collection tab 的变量列表 */
+  updateCollectionVariables: (key: string, variables: KeyValueItem[]) => void;
+  /** Overview 文档 / Collection 变量保存后刷新快照 */
   markDocSaved: (key: string) => void;
   closeTab: (key: string) => void;
   setActive: (key: string) => void;
@@ -355,7 +365,11 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       collectionId: collection.id,
       name: collection.name,
       description: collection.description ?? "",
-      savedSnapshot: collection.description ?? "",
+      variables: collection.variables ?? [],
+      savedSnapshot: collectionSnapshot(
+        collection.description ?? "",
+        collection.variables ?? [],
+      ),
       saving: false,
     };
     set((s) => ({ tabs: [...s.tabs, tab], activeKey: key }));
@@ -567,14 +581,29 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       ),
     })),
 
-  markDocSaved: (key) =>
+  updateCollectionVariables: (key, variables) =>
     set((s) => ({
       tabs: s.tabs.map((t) =>
-        t.key === key &&
-        (t.kind === "collection" || t.kind === "folder" || t.kind === "document")
-          ? { ...t, savedSnapshot: t.description }
-          : t,
+        t.key === key && t.kind === "collection" ? { ...t, variables } : t,
       ),
+    })),
+
+  markDocSaved: (key) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) => {
+        if (t.key !== key) return t;
+        // Collection tab 的快照含 description + variables
+        if (t.kind === "collection") {
+          return {
+            ...t,
+            savedSnapshot: collectionSnapshot(t.description, t.variables),
+          };
+        }
+        if (t.kind === "folder" || t.kind === "document") {
+          return { ...t, savedSnapshot: t.description };
+        }
+        return t;
+      }),
     })),
 
   closeTab: (key) => {
@@ -652,6 +681,9 @@ export function isTabDirty(tab: WorkTab): boolean {
   if (tab.kind === "environment")
     return envSnapshot(tab.name, tab.variables) !== tab.savedSnapshot;
   if (tab.kind === "spec") return specSnapshot(tab) !== tab.savedSnapshot;
+  if (tab.kind === "collection") {
+    return collectionSnapshot(tab.description, tab.variables) !== tab.savedSnapshot;
+  }
   if (tab.kind !== "request") return tab.description !== tab.savedSnapshot;
   if (tab.savedSnapshot === null) return true;
   return snapshot(tab.config) !== tab.savedSnapshot;

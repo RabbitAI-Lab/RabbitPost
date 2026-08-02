@@ -12,24 +12,27 @@ import { writeAuditLog } from "../../../../../../lib/org";
 
 type Ctx = { params: Promise<{ orgId: string }> };
 
+const settingsResponse = (org: typeof organizations.$inferSelect) => ({
+  id: org.id,
+  name: org.name,
+  slug: org.slug,
+  logoUrl: org.logoUrl,
+  domain: org.domain,
+  plan: org.plan,
+  status: org.status,
+  seatLimit: org.seatLimit,
+  requestQuota: org.requestQuota,
+  ssoConfig: org.ssoConfig ?? null,
+  adminEmail: org.adminEmail,
+});
+
 /** GET /api/v1/orgs/:orgId/settings */
 export const GET = handleRoute<Ctx>(async (_req, ctx, user) => {
   const { orgId } = await ctx.params;
   await requireOrgRole(orgId, user.id, "admin");
   const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId)).limit(1);
   if (!org) throw new HttpError(404, "NOT_FOUND", "Organization not found");
-  return ok({
-    id: org.id,
-    name: org.name,
-    slug: org.slug,
-    logoUrl: org.logoUrl,
-    domain: org.domain,
-    plan: org.plan,
-    status: org.status,
-    seatLimit: org.seatLimit,
-    requestQuota: org.requestQuota,
-    ssoConfig: org.ssoConfig ?? null,
-  });
+  return ok(settingsResponse(org));
 });
 
 const patchSchema = z.object({
@@ -39,6 +42,7 @@ const patchSchema = z.object({
   seatLimit: z.number().int().min(0).optional(),
   requestQuota: z.number().int().min(0).optional(),
   ssoConfig: z.record(z.string(), z.unknown()).nullable().optional(),
+  adminEmail: z.string().email().nullable().optional(),
 });
 
 /** PATCH /api/v1/orgs/:orgId/settings — admin+ */
@@ -63,16 +67,5 @@ export const PATCH = handleRoute<Ctx>(async (req, ctx, user) => {
     detail: body as Record<string, unknown>,
   });
 
-  return ok({
-    id: org.id,
-    name: org.name,
-    slug: org.slug,
-    logoUrl: org.logoUrl,
-    domain: org.domain,
-    plan: org.plan,
-    status: org.status,
-    seatLimit: org.seatLimit,
-    requestQuota: org.requestQuota,
-    ssoConfig: org.ssoConfig ?? null,
-  });
+  return ok(settingsResponse(org));
 });

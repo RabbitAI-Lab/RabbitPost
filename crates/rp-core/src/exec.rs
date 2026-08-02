@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT_ENCODING, CONTENT_TYPE};
 use reqwest::{Client, Method};
 use url::Url;
 
@@ -32,6 +32,8 @@ struct ClientKey {
 /// 客户端池：同一组设置复用连接池，避免每个请求都重建 TLS 栈
 pub struct ClientPool {
     clients: Mutex<HashMap<ClientKey, Client>>,
+    /// 保留用于 Runner↔API 通信的 UA；实际请求不注入（见 client_for 注释）
+    #[allow(dead_code)]
     user_agent: String,
 }
 
@@ -58,10 +60,18 @@ impl ClientPool {
         } else {
             reqwest::redirect::Policy::none()
         };
+        // 不向实际请求注入 Runner 自身的 User-Agent：用户未设置该头时应原样留空（多数
+        // 服务端对空 UA 按浏览器处理），强行注入会导致部分站点返回与预期不同的内容
+        // （如百度对非浏览器 UA 返回 JS 跳转页而非完整首页）。用户在 Headers tab 手写
+        // 的 User-Agent 仍由 build_headers 正常携带。
+        //
+        // gzip(true) 启用自动解压（服务端可能不顾 accept-encoding 强制 gzip），
+        // 但每条请求会在 do_send 中将 accept-encoding 覆盖为 identity（对齐 Postman：
+        // 不主动声明压缩支持），避免部分站点因 accept-encoding: gzip 返回异常内容。
         let mut builder = Client::builder()
             .redirect(redirect)
             .danger_accept_invalid_certs(!key.verify_ssl)
-            .user_agent(self.user_agent.clone());
+            .gzip(true);
         // timeoutMs = 0 表示不超时
         if key.timeout_ms > 0 {
             builder = builder.timeout(Duration::from_millis(key.timeout_ms));
@@ -121,6 +131,8 @@ fn failure(
         test_results,
         console_logs,
         script_variables: None,
+        response_headers: None,
+        response_body: None,
     }
 }
 
@@ -1134,6 +1146,13 @@ async fn do_send(
             request = request.multipart(form);
         }
     }
+    // reqwest gzip(true) 会自动注入 accept-encoding: gzip 作为默认头；
+    // 用户未显式声明时应覆盖为 identity（对齐 Postman：不主动声明压缩支持），
+    // 避免部分站点因 accept-encoding: gzip 返回异常内容。
+    // 用户在 Headers tab 手写的 Accept-Encoding 会在此处覆盖 identity。
+    if !h.contains_key("accept-encoding") {
+        h.insert(ACCEPT_ENCODING, HeaderValue::from_static("identity"));
+    }
     request = request.headers(h);
 
     let started = Instant::now();
@@ -1142,27 +1161,44 @@ async fn do_send(
             let status = resp.status();
             let status_text = status.canonical_reason().unwrap_or("").to_string();
             let final_url = resp.url().to_string();
-            let response_headers: HashMap<String, String> = resp
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect();
+            // reqwest HeaderMap 对同名 header（如 set-cookie）有多条记录；
+            // 收集到 HashMap 时须合并而非覆盖（否则 Headers tab 会少行、Cookie 会丢）
+            let mut response_headers: HashMap<String, String> = HashMap::new();
+            for (k, v) in resp.headers().iter() {
+                let key = k.as_str().to_string();
+                let val = v.to_str().unwrap_or("").to_string();
+                response_headers
+                    .entry(key)
+                    .and_modify(|existing| {
+                        existing.push_str(", ");
+                        existing.push_str(&val);
+                    })
+                    .or_insert(val);
+            }
             match resp.bytes().await {
                 Ok(bytes) => {
                     let duration_ms = started.elapsed().as_millis() as u64;
                     let size = bytes.len();
                     // 与 CI 语义一致：4xx / 5xx 记为失败，状态码仍原样上报
                     let ok = status.is_success() || status.is_redirection();
+                    let body_text = String::from_utf8_lossy(&bytes).into_owned();
                     let view = if size <= MAX_BODY_CAPTURE_BYTES {
                         Some(script::ResponseView {
                             code: status.as_u16(),
                             status: status_text.clone(),
-                            headers: response_headers,
+                            headers: response_headers.clone(),
                             time: duration_ms,
-                            body_text: String::from_utf8_lossy(&bytes).into_owned(),
+                            body_text: body_text.clone(),
                         })
                     } else {
                         None
+                    };
+                    // 服务端 runJobResultInputSchema 限制 responseBody ≤ 65536 字符；
+                    // 超长截断，保证整批上报不被 zod 拒绝
+                    let report_body: String = if body_text.len() > 65536 {
+                        body_text.chars().take(65536).collect()
+                    } else {
+                        body_text
                     };
                     Ok((
                         JobResult {
@@ -1180,6 +1216,8 @@ async fn do_send(
                             test_results: None,
                             console_logs: None,
                             script_variables: None,
+                            response_headers: Some(response_headers),
+                            response_body: Some(report_body),
                         },
                         view,
                     ))
@@ -1199,6 +1237,8 @@ async fn do_send(
                     test_results: None,
                     console_logs: None,
                     script_variables: None,
+                    response_headers: None,
+                    response_body: None,
                 }),
             }
         }

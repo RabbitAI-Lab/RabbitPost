@@ -166,9 +166,9 @@ export default function ScriptSnippets({ phase, onInsert }: Props) {
               <div
                 style={{
                   padding: "8px 12px 4px",
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 600,
-                  color: "#8c8c8c",
+                  color: "#6b6b6b",
                 }}
               >
                 {g.title}

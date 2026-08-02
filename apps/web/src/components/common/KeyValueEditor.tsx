@@ -33,7 +33,12 @@ interface Props {
   showKeyType?: boolean;
   /** Key / Value 输入框开启 {{var}} 变量高亮（环境变量定义处不应开启） */
   highlightVars?: boolean;
+  /** 追加在列表末尾、草稿行之前的只读行（置灰不可编辑，如自动生成的 Headers） */
+  readOnlyRows?: { key: string; value: string }[];
 }
+
+/** 带只读标记的行类型（内部用） */
+type EditorRow = KeyValueItem & { readOnly?: boolean };
 
 /** Postman 风格 Key-Value 表格编辑器：末行自动追加空行 */
 export default function KeyValueEditor({
@@ -48,6 +53,7 @@ export default function KeyValueEditor({
   showDescription = false,
   showKeyType = false,
   highlightVars = false,
+  readOnlyRows = [],
 }: Props) {
   // 草稿行预先持有真实 id：提交时沿用该 id，保证 rowKey 不变、Input 不重建、焦点不丢
   const [draftId, setDraftId] = useState(() => newKvItem().id);
@@ -66,13 +72,22 @@ export default function KeyValueEditor({
     onChange(items.filter((it) => it.id !== id));
   };
 
+  // 只读行查找表：id -> { key, value }。antd Table 内部会覆盖 record.key（作为 React key），
+  // 因此只读行的 key/value 不能依赖 record 上的属性，需从外部查找。
+  const readOnlyMap = new Map<string, { key: string; value: string }>(
+    readOnlyRows.map((r) => [`readonly-${r.key}`, r]),
+  );
+  const isReadOnly = (id: string) => readOnlyMap.has(id);
+
   const columns = [
     {
       title: "",
       dataIndex: "enabled",
       width: 36,
-      render: (_: unknown, row: KeyValueItem) =>
-        row.id === draftId ? null : (
+      render: (_: unknown, row: EditorRow) =>
+        isReadOnly(row.id) ? (
+          <span style={{ color: "rgba(0,0,0,0.45)", fontSize: 12 }}>auto</span>
+        ) : row.id === draftId ? null : (
           <Checkbox
             checked={row.enabled}
             onChange={(e) => update(row.id, { enabled: e.target.checked })}
@@ -82,7 +97,11 @@ export default function KeyValueEditor({
     {
       title: keyTitle ?? keyPlaceholder,
       dataIndex: "key",
-      render: (_: unknown, row: KeyValueItem) => {
+      render: (_: unknown, row: EditorRow) => {
+        const roData = readOnlyMap.get(row.id);
+        if (roData) {
+          return <span style={{ color: "rgba(0,0,0,0.45)", fontSize: 12 }}>{roData.key}</span>;
+        }
         const placeholder =
           row.id === draftId ? (draftKeyPlaceholder ?? keyPlaceholder) : keyPlaceholder;
         const setKey = (v: string) => update(row.id, { key: v });
@@ -110,7 +129,7 @@ export default function KeyValueEditor({
         return highlightVars ? (
           <VarInput
             size="small"
-            variant="filled"
+            variant="borderless"
             value={row.key}
             placeholder={placeholder}
             onChange={setKey}
@@ -119,7 +138,7 @@ export default function KeyValueEditor({
         ) : (
           <Input
             size="small"
-            variant="filled"
+            variant="borderless"
             value={row.key}
             placeholder={placeholder}
             onChange={(e) => setKey(e.target.value)}
@@ -131,8 +150,12 @@ export default function KeyValueEditor({
     {
       title: valueTitle ?? valuePlaceholder,
       dataIndex: "value",
-      render: (_: unknown, row: KeyValueItem) =>
-        showKeyType && row.type === "file" ? (
+      render: (_: unknown, row: EditorRow) => {
+        const roData = readOnlyMap.get(row.id);
+        if (roData) {
+          return <span style={{ color: "rgba(0,0,0,0.45)", fontSize: 12 }}>{roData.value}</span>;
+        }
+        return showKeyType && row.type === "file" ? (
           <Upload
             showUploadList={false}
             beforeUpload={(file) => {
@@ -152,7 +175,7 @@ export default function KeyValueEditor({
         ) : highlightVars ? (
           <VarInput
             size="small"
-            variant="filled"
+            variant="borderless"
             value={row.value}
             placeholder={valuePlaceholder}
             onChange={(v) => update(row.id, { value: v })}
@@ -160,27 +183,29 @@ export default function KeyValueEditor({
         ) : (
           <Input
             size="small"
-            variant="filled"
+            variant="borderless"
             value={row.value}
             placeholder={valuePlaceholder}
             onChange={(e) => update(row.id, { value: e.target.value })}
           />
-        ),
+        );
+      },
     },
     ...(showDescription
       ? [
           {
             title: "Description",
             dataIndex: "description",
-            render: (_: unknown, row: KeyValueItem) => (
-              <Input
-                size="small"
-                variant="filled"
-                value={row.description ?? ""}
-                placeholder="Description"
-                onChange={(e) => update(row.id, { description: e.target.value })}
-              />
-            ),
+            render: (_: unknown, row: EditorRow) =>
+              isReadOnly(row.id) ? null : (
+                <Input
+                  size="small"
+                  variant="borderless"
+                  value={row.description ?? ""}
+                  placeholder="Description"
+                  onChange={(e) => update(row.id, { description: e.target.value })}
+                />
+              ),
           },
         ]
       : []),
@@ -205,8 +230,8 @@ export default function KeyValueEditor({
       title: "",
       dataIndex: "actions",
       width: 36,
-      render: (_: unknown, row: KeyValueItem) =>
-        row.id === draftId ? null : (
+      render: (_: unknown, row: EditorRow) =>
+        isReadOnly(row.id) || row.id === draftId ? null : (
           <Button
             type="text"
             size="small"
@@ -218,19 +243,29 @@ export default function KeyValueEditor({
     },
   ];
 
-  // 末尾常驻一行待填写草稿行（含空数据时也展示表头与草稿行）
-  const rows: KeyValueItem[] = [
+  // 只读行（如自动生成的 Headers）→ 用户条目 → 草稿行
+  const rows: EditorRow[] = [
+    ...readOnlyRows.map((r) => ({
+      id: `readonly-${r.key}`,
+      key: r.key,
+      value: r.value,
+      enabled: true,
+      readOnly: true,
+    })),
     ...items,
     { id: draftId, key: "", value: "", enabled: true },
   ];
 
   return (
-    <Table<KeyValueItem>
+    <Table<EditorRow>
       size="small"
       rowKey="id"
       columns={columns as never}
       dataSource={rows}
       pagination={false}
+      rowClassName={(row) =>
+        isReadOnly(row.id) ? "kv-readonly-row" : ""
+      }
     />
   );
 }

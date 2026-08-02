@@ -86,7 +86,7 @@ export default function RequestTitleBar({ tab, extra }: Props) {
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              fontSize: 13,
+              fontSize: 12,
               padding: "0 4px",
             }}
           >
@@ -158,7 +158,7 @@ export default function RequestTitleBar({ tab, extra }: Props) {
             </Typography.Text>
           </span>
         )}
-        <Typography.Text strong style={{ fontSize: 13, whiteSpace: "nowrap" }} ellipsis>
+        <Typography.Text strong style={{ fontSize: 12, whiteSpace: "nowrap" }} ellipsis>
           {tab.name}
         </Typography.Text>
       </span>

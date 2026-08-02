@@ -18,9 +18,11 @@ export default function ConsoleMembers() {
   const currentUser = useAppStore((s) => s.user);
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<Exclude<OrgRole, "owner">>("member");
-  const [inviting, setInviting] = useState(false);
+
+  // 添加企业成员（先添加到企业，再可选择加入哪个团队）
+  const [addEmail, setAddEmail] = useState("");
+  const [addRole, setAddRole] = useState<Exclude<OrgRole, "owner">>("member");
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -36,18 +38,18 @@ export default function ConsoleMembers() {
     void load();
   }, [load]);
 
-  const handleInvite = async () => {
-    if (!inviteEmail.trim()) return;
-    setInviting(true);
+  const handleAddMember = async () => {
+    if (!addEmail.trim()) return;
+    setAdding(true);
     try {
-      await orgsApi.inviteMember(orgId!, inviteEmail.trim(), inviteRole);
-      setInviteEmail("");
+      await orgsApi.inviteMember(orgId!, addEmail.trim(), addRole);
+      setAddEmail("");
       await load();
-      message.success("成员已邀请");
+      message.success("成员已添加到企业");
     } catch (e) {
       message.error(e instanceof Error ? e.message : String(e));
     } finally {
-      setInviting(false);
+      setAdding(false);
     }
   };
 
@@ -69,27 +71,32 @@ export default function ConsoleMembers() {
         成员管理
       </Typography.Title>
 
+      <Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+        在此添加企业成员。添加到团队请前往「团队管理」→ 点击团队 → 添加成员。
+      </Typography.Text>
+
+      {/* 添加成员到企业 */}
       <Space style={{ marginBottom: 16, width: "100%" }}>
         <Input
           placeholder="成员邮箱（需已登录过一次）"
-          value={inviteEmail}
-          onChange={(e) => setInviteEmail(e.target.value)}
-          onPressEnter={() => void handleInvite()}
+          value={addEmail}
+          onChange={(e) => setAddEmail(e.target.value)}
+          onPressEnter={() => void handleAddMember()}
           style={{ width: 320 }}
         />
         <Select
-          value={inviteRole}
+          value={addRole}
           style={{ width: 120 }}
           options={ROLE_OPTIONS}
-          onChange={setInviteRole}
+          onChange={setAddRole}
         />
         <Button
           type="primary"
           icon={<UserAddOutlined />}
-          loading={inviting}
-          onClick={() => void handleInvite()}
+          loading={adding}
+          onClick={() => void handleAddMember()}
         >
-          邀请
+          添加成员
         </Button>
       </Space>
 
@@ -144,9 +151,9 @@ export default function ConsoleMembers() {
             key: "teamIds",
             render: (_, r) =>
               r.teamIds && r.teamIds.length > 0 ? (
-                <Tag>{r.teamIds.length} 个团队</Tag>
+                <Tag color="blue">{r.teamIds.length} 个团队</Tag>
               ) : (
-                <span style={{ color: "#ccc" }}>-</span>
+                <span style={{ color: "#ccc" }}>未加入团队</span>
               ),
           },
           {

@@ -1,5 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { RequestConfig } from "@rabbitpost/shared";
 import { db } from "../../../../../../../db";
 import { runJobResults, runJobs } from "../../../../../../../db/schema";
 import { HttpError, ok } from "../../../../../../../lib/http";
@@ -45,6 +46,9 @@ export const POST = handleRunnerRoute(async (req, ctx: Ctx, runner) => {
       error: r.error ?? null,
       testResults: r.testResults ?? null,
       consoleLogs: r.consoleLogs ?? null,
+      request: (r.request as RequestConfig | null | undefined) ?? null,
+      responseHeaders: r.responseHeaders ?? null,
+      responseBody: r.responseBody ?? null,
     })),
   );
 

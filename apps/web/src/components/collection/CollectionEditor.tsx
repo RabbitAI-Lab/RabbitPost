@@ -3,7 +3,7 @@ import { App, Button, Empty, Segmented, Tabs, Typography } from "antd";
 import { useState } from "react";
 import { collectionsApi } from "../../api";
 import { useTabSaveHandler } from "../../lib/save-shortcut";
-import { findFolderTrail } from "../../lib/tree";
+import { findFolderTrail, isInScenarioTree } from "../../lib/tree";
 import { useAppStore } from "../../stores/app";
 import {
   isTabDirty,
@@ -13,6 +13,7 @@ import {
 } from "../../stores/tabs";
 import MarkdownEditor from "../common/MarkdownEditor";
 import CollectionRunsPanel from "./CollectionRunsPanel";
+import CollectionVariablesPanel from "./CollectionVariablesPanel";
 
 interface Props {
   tab: CollectionTab | FolderTab;
@@ -35,12 +36,17 @@ export default function CollectionEditor({ tab }: Props) {
   const { message } = App.useApp();
   const { collections, collectionTrees, refreshCollections, refreshCollectionTree } =
     useAppStore();
-  const { updateDocDescription, markDocSaved, setSaving } = useTabsStore();
+  const { updateDocDescription, updateCollectionVariables, markDocSaved, setSaving } =
+    useTabsStore();
   // Overview 编辑 / 预览模式；默认编辑
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   // 当前激活的 tab（Save 按钮与编辑/预览切换仅 Overview 需要）
   const [activeKey, setActiveKey] = useState("overview");
   const dirty = isTabDirty(tab);
+  // 场景测试目录（及其子目录）下的文件夹只保留 Overview
+  const isScenarioFolder =
+    tab.kind === "folder" &&
+    isInScenarioTree(collectionTrees[tab.collectionId] ?? [], tab.itemId);
 
   // 路径面包屑：Collection 名 > 祖先文件夹链；末段为当前名称（加粗）
   const collectionName =
@@ -60,6 +66,7 @@ export default function CollectionEditor({ tab }: Props) {
       if (tab.kind === "collection") {
         await collectionsApi.update(tab.collectionId, {
           description: tab.description,
+          variables: tab.variables,
         });
         await refreshCollections();
       } else {
@@ -135,29 +142,32 @@ export default function CollectionEditor({ tab }: Props) {
         activeKey={activeKey}
         onChange={setActiveKey}
         tabBarExtraContent={{
-          // 编辑/预览与保存仅服务 Overview；Runs 等其它 tab 不展示
-          right: activeKey === "overview" ? (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-              <Segmented
-                size="small"
-                value={mode}
-                onChange={(v) => setMode(v as "edit" | "preview")}
-                options={[
-                  { value: "edit", label: "编辑", icon: <EditOutlined /> },
-                  { value: "preview", label: "预览", icon: <EyeOutlined /> },
-                ]}
-              />
-              <Button
-                size="small"
-                icon={<SaveOutlined />}
-                loading={tab.saving}
-                disabled={!dirty}
-                onClick={() => void handleSave()}
-              >
-                Save
-              </Button>
-            </span>
-          ) : null,
+          // 编辑/预览与保存仅服务 Overview / Variables；其它 tab 不展示
+          right:
+            activeKey === "overview" || activeKey === "variables" ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                {activeKey === "overview" ? (
+                  <Segmented
+                    size="small"
+                    value={mode}
+                    onChange={(v) => setMode(v as "edit" | "preview")}
+                    options={[
+                      { value: "edit", label: "编辑", icon: <EditOutlined /> },
+                      { value: "preview", label: "预览", icon: <EyeOutlined /> },
+                    ]}
+                  />
+                ) : null}
+                <Button
+                  size="small"
+                  icon={<SaveOutlined />}
+                  loading={tab.saving}
+                  disabled={!dirty}
+                  onClick={() => void handleSave()}
+                >
+                  Save
+                </Button>
+              </span>
+            ) : null,
         }}
         items={[
           {
@@ -171,23 +181,33 @@ export default function CollectionEditor({ tab }: Props) {
               />
             ),
           },
-          {
-            key: "authorization",
-            label: "Authorization",
-            children: <ComingSoon label="Authorization" />,
-          },
-          {
-            key: "scripts",
-            label: "Scripts",
-            children: <ComingSoon label="Scripts" />,
-          },
+          // Authorization / Scripts 为暂未支持的占位；场景测试目录下仅保留 Overview
+          ...(!isScenarioFolder
+            ? [
+                {
+                  key: "authorization",
+                  label: "Authorization",
+                  children: <ComingSoon label="Authorization" />,
+                },
+                {
+                  key: "scripts",
+                  label: "Scripts",
+                  children: <ComingSoon label="Scripts" />,
+                },
+              ]
+            : []),
           // Variables / Runs 仅 Collection 有
           ...(tab.kind === "collection"
             ? [
                 {
                   key: "variables",
                   label: "Variables",
-                  children: <ComingSoon label="Variables" />,
+                  children: (
+                    <CollectionVariablesPanel
+                      variables={tab.variables}
+                      onChange={(variables) => updateCollectionVariables(tab.key, variables)}
+                    />
+                  ),
                 },
                 {
                   key: "runs",

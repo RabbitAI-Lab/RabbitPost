@@ -323,6 +323,9 @@ mod tests {
                     level: "log".to_string(),
                     args: vec!["hi ]]> <x>".to_string()],
                 }]),
+                script_variables: None,
+                response_headers: None,
+                response_body: None,
             },
             JobResult {
                 item_id: None,
@@ -342,6 +345,9 @@ mod tests {
                     error: Some("AssertionError: nope".to_string()),
                 }]),
                 console_logs: None,
+                script_variables: None,
+                response_headers: None,
+                response_body: None,
             },
         ]
     }

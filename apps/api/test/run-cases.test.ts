@@ -120,7 +120,7 @@ describe("dispatch → claim → results → detail（Runner 链路）", () => {
           method: "POST",
           json: {
             results: [
-              { itemId: s.itemId, name: "Health Check", method: "GET", url: "http://x/health", ok: true, status: 200, durationMs: 5 },
+              { itemId: s.itemId, name: "Health Check", method: "GET", url: "http://x/health", ok: true, status: 200, durationMs: 5, responseHeaders: { "content-type": "text/html" }, responseBody: "<html>ok</html>" },
               {
                 itemId: s.itemId,
                 caseId: c.id,
@@ -149,6 +149,9 @@ describe("dispatch → claim → results → detail（Runner 链路）", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]!.caseId).toBeNull();
     expect(rows[1]!.caseId).toBe(c.id);
+    // Runner 上报的响应头 / 响应体必须落库（Send 按钮 Body tab 数据源）
+    expect(rows[0]!.responseHeaders).toEqual({ "content-type": "text/html" });
+    expect(rows[0]!.responseBody).toBe("<html>ok</html>");
 
     // 5. 详情接口读回（Web Runs UI 数据源）
     const detail = await envelope<RunJobDetail>(

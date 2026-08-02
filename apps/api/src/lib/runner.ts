@@ -237,22 +237,52 @@ export async function requireRunnerInTeam(
   return row;
 }
 
-/** 环境变量表：与 /api/v1/execute 同源语义，仅取 enabled 的键值 */
+/**
+ * 变量表：Collection 级为底，Environment 覆盖（与 /api/v1/execute 及 Postman 优先级一致）。
+ * collectionId 可选——单请求执行时由调用方解析所属 Collection 后传入。
+ */
 export async function loadRunnerVariables(
   environmentId: string | null,
+  collectionId?: string | null,
 ): Promise<VariableMap> {
-  if (!environmentId) return {};
-  const [row] = await db
-    .select()
-    .from(environments)
-    .where(eq(environments.id, environmentId))
-    .limit(1);
-  if (!row) return {};
   const vars: VariableMap = {};
-  for (const v of row.variables as EnvironmentVariable[]) {
-    if (v.enabled && v.key) vars[v.key] = v.value;
+  // Collection 级变量（底）
+  if (collectionId) {
+    const [col] = await db
+      .select({ variables: collections.variables })
+      .from(collections)
+      .where(eq(collections.id, collectionId))
+      .limit(1);
+    if (col?.variables) {
+      for (const v of col.variables as EnvironmentVariable[]) {
+        if (v.enabled && v.key) vars[v.key] = v.value;
+      }
+    }
+  }
+  // Environment 覆盖
+  if (environmentId) {
+    const [row] = await db
+      .select()
+      .from(environments)
+      .where(eq(environments.id, environmentId))
+      .limit(1);
+    if (row) {
+      for (const v of row.variables as EnvironmentVariable[]) {
+        if (v.enabled && v.key) vars[v.key] = v.value;
+      }
+    }
   }
   return vars;
+}
+
+/** 由请求条目 id 解析所属 Collection id（条目不存在时返回 null） */
+export async function collectionIdOfItem(itemId: string): Promise<string | null> {
+  const [item] = await db
+    .select({ collectionId: collectionItems.collectionId })
+    .from(collectionItems)
+    .where(eq(collectionItems.id, itemId))
+    .limit(1);
+  return item?.collectionId ?? null;
 }
 
 /**

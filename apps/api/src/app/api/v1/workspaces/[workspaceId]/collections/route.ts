@@ -19,6 +19,7 @@ function toCollection(row: typeof collections.$inferSelect): Collection {
     name: row.name,
     description: row.description,
     sortOrder: row.sortOrder,
+    variables: row.variables ?? [],
     createdAt: row.createdAt.toISOString(),
   };
 }

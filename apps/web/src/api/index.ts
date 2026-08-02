@@ -100,8 +100,10 @@ export const collectionsApi = {
       method: "POST",
       json: { name, description },
     }),
-  update: (collectionId: string, patch: { name?: string; description?: string | null }) =>
-    api(`/api/v1/collections/${collectionId}`, { method: "PATCH", json: patch }),
+  update: (
+    collectionId: string,
+    patch: { name?: string; description?: string | null; variables?: Collection["variables"] },
+  ) => api(`/api/v1/collections/${collectionId}`, { method: "PATCH", json: patch }),
   reorder: (workspaceId: string, orderedIds: string[]) =>
     api(`/api/v1/workspaces/${workspaceId}/collections`, {
       method: "PATCH",

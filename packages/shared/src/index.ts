@@ -657,6 +657,42 @@ export interface UsageSummary {
   total: number;
 }
 
+export interface Notification {
+  id: string;
+  orgId: string;
+  level: "org_admin" | "team_admin";
+  title: string;
+  body: string;
+  actorId: string | null;
+  actorName: string | null;
+  teamId: string | null;
+  teamName: string | null;
+  read: boolean;
+  createdAt: string;
+}
+
+/** 企业团队详情（含 Team Admin 信息与成员列表） */
+export interface OrgTeamDetail {
+  id: string;
+  name: string;
+  slug: string;
+  avatarUrl: string | null;
+  orgId: string | null;
+  createdBy: string;
+  createdAt: string;
+  memberCount: number;
+  workspaceCount: number;
+  collectionCount: number;
+  /** Team Admin 列表（role = owner 或 admin 的成员） */
+  admins: {
+    userId: string;
+    name: string;
+    email: string | null;
+    avatarUrl: string | null;
+    role: TeamRole;
+  }[];
+}
+
 export interface Workspace {
   id: string;
   teamId: string;
@@ -673,6 +709,8 @@ export interface Collection {
   description: string | null;
   /** 侧边栏手动拖拽排序 */
   sortOrder: number;
+  /** Collection 级变量（作用域为当前 Collection，优先级低于 Environment） */
+  variables: KeyValueItem[];
   createdAt: string;
 }
 

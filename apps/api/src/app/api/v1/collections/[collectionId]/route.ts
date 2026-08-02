@@ -27,6 +27,7 @@ export const GET = handleRoute<Ctx>(async (_req, ctx, user) => {
     name: col.name,
     description: col.description,
     sortOrder: col.sortOrder,
+    variables: col.variables ?? [],
     createdAt: col.createdAt.toISOString(),
   });
 });
@@ -34,6 +35,19 @@ export const GET = handleRoute<Ctx>(async (_req, ctx, user) => {
 const patchSchema = z.object({
   name: z.string().min(1).max(128).optional(),
   description: z.string().max(1024).nullable().optional(),
+  variables: z
+    .array(
+      z
+        .object({
+          id: z.string(),
+          key: z.string(),
+          value: z.string(),
+          enabled: z.boolean(),
+          description: z.string().optional(),
+        })
+        .passthrough(),
+    )
+    .optional(),
 });
 
 /** PATCH /api/v1/collections/:collectionId — editor+ */
@@ -47,7 +61,8 @@ export const PATCH = handleRoute<Ctx>(async (req, ctx, user) => {
     .where(eq(collections.id, collectionId))
     .returning();
   if (!col) throw new HttpError(404, "NOT_FOUND", "Collection not found");
-  return ok({ id: col.id, name: col.name, description: col.description });
+  return ok({
+    id: col.id, name: col.name, description: col.description, variables: col.variables ?? [] });
 });
 
 /** DELETE /api/v1/collections/:collectionId — editor+（级联删除 items） */

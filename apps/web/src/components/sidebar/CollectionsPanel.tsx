@@ -25,25 +25,25 @@ import { useTabsStore } from "../../stores/tabs";
 import ChevronIcon from "../common/ChevronIcon";
 import ExportCollectionModal from "./ExportCollectionModal";
 
+/** Postman 方法标签：8px 微缩字号 + 方法专属颜色 */
 const METHOD_COLORS: Record<string, string> = {
-  GET: "#61affe",
-  POST: "#49cc90",
-  PUT: "#fca130",
-  PATCH: "#50e3c2",
-  DELETE: "#f93e3e",
-  HEAD: "#9012fe",
-  OPTIONS: "#0d5aa7",
+  GET: "#247e4c",
+  POST: "#a87d13",
+  PUT: "#a87d13",
+  PATCH: "#a87d13",
+  DELETE: "#a87d13",
+  HEAD: "#6b6b6b",
+  OPTIONS: "#6b6b6b",
 };
 
 function MethodTag({ method }: { method?: string }) {
   if (!method) return null;
   return (
     <span
-      className="code-font"
       style={{
-        color: METHOD_COLORS[method] ?? "#666",
-        fontWeight: 700,
-        fontSize: 10,
+        color: METHOD_COLORS[method] ?? "#6b6b6b",
+        fontWeight: 600,
+        fontSize: 8,
         marginRight: 5,
         flexShrink: 0,
       }}
@@ -398,7 +398,7 @@ export default function CollectionsPanel({
           />
         )}
         {data.kind === "request" && <MethodTag method={data.item?.request?.method} />}
-        <Typography.Text ellipsis style={{ fontSize: 13, flex: 1 }}>
+        <Typography.Text ellipsis style={{ fontSize: 12, flex: 1, color: "#6b6b6b" }}>
           {data.name}
         </Typography.Text>
         {/* 场景测试目录（及其子目录）hover 显 +（新建场景） */}

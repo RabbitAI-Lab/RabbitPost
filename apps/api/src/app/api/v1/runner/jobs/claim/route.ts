@@ -4,6 +4,7 @@ import { db } from "../../../../../../db";
 import { collectionItems, runJobs } from "../../../../../../db/schema";
 import { ok } from "../../../../../../lib/http";
 import {
+  collectionIdOfItem,
   expandRunTarget,
   handleRunnerRoute,
   loadRunnerVariables,
@@ -72,14 +73,16 @@ export const POST = handleRunnerRoute(async (_req, _ctx, runner) => {
         name: job.target_name,
         request: job.request_config,
       }];
-      variables = await loadRunnerVariables(job.environment_id);
+      // target_id 为请求条目 id 时，解析所属 Collection 以加载 Collection 级变量
+      const colId = await collectionIdOfItem(job.target_id);
+      variables = await loadRunnerVariables(job.environment_id, colId);
     } else {
       const target = await expandRunTarget(
         job.target_type as "request" | "collection" | "scenario",
         job.target_id,
       );
       items = target.items;
-      variables = await loadRunnerVariables(job.environment_id);
+      variables = await loadRunnerVariables(job.environment_id, target.collectionId);
     }
 
     // 请求数可能变化，回填以保证进度显示准确

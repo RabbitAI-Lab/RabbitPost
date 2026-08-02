@@ -12,6 +12,7 @@ process.env.DATABASE_URL = testDatabaseUrl();
 // 只清业务数据：users 保留（全局种子在 beforeAll 创建一次），
 // 避免 beforeEach 清表与并发插入 users 的外键竞态
 const TABLES = [
+  "notifications",
   "usage_events",
   "audit_logs",
   "organization_members",

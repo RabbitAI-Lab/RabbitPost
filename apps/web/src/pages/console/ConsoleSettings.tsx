@@ -14,6 +14,7 @@ interface OrgSettings {
   seatLimit: number;
   requestQuota: number;
   ssoConfig: Record<string, unknown> | null;
+  adminEmail: string | null;
 }
 
 interface SettingsFormValues {
@@ -23,6 +24,7 @@ interface SettingsFormValues {
   seatLimit?: number;
   requestQuota?: number;
   ssoConfigText?: string;
+  adminEmail?: string;
 }
 
 export default function ConsoleSettings() {
@@ -46,6 +48,7 @@ export default function ConsoleSettings() {
         seatLimit: d.seatLimit || undefined,
         requestQuota: d.requestQuota || undefined,
         ssoConfigText: d.ssoConfig ? JSON.stringify(d.ssoConfig, null, 2) : "",
+        adminEmail: d.adminEmail ?? "",
       });
     } finally {
       setLoading(false);
@@ -79,6 +82,7 @@ export default function ConsoleSettings() {
         seatLimit: values.seatLimit ?? 0,
         requestQuota: values.requestQuota ?? 0,
         ssoConfig,
+        adminEmail: values.adminEmail || null,
       });
       message.success("设置已保存");
       await load();
@@ -125,6 +129,16 @@ export default function ConsoleSettings() {
               </Form.Item>
             </Col>
           </Row>
+        </Card>
+
+        <Card title="管理员通知" size="small" style={{ marginBottom: 16 }}>
+          <Form.Item
+            name="adminEmail"
+            label="企业管理员邮箱"
+            help="增删改团队、工作区时通知此邮箱"
+          >
+            <Input placeholder="admin@company.com" />
+          </Form.Item>
         </Card>
 
         <Card title="配额管理" size="small" style={{ marginBottom: 16 }}>

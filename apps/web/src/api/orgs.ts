@@ -1,9 +1,12 @@
 import type {
   AuditLog,
   DashboardSummary,
+  Notification,
   OrgMember,
   OrgRole,
   Organization,
+  TeamMember,
+  TeamRole,
   UsageMetric,
   UsageSummary,
 } from "@rabbitpost/shared";
@@ -130,6 +133,7 @@ export const orgsApi = {
       seatLimit: number;
       requestQuota: number;
       ssoConfig: Record<string, unknown> | null;
+      adminEmail: string | null;
     }>(`/api/v1/orgs/${orgId}/settings`),
   updateSettings: (orgId: string, patch: Record<string, unknown>) =>
     api(`/api/v1/orgs/${orgId}/settings`, { method: "PATCH", json: patch }),
@@ -144,4 +148,53 @@ export const orgsApi = {
       requestQuota: number;
       requestUsedEstimate: number;
     }>(`/api/v1/orgs/${orgId}/billing`),
+
+  // notifications
+  notifications: (orgId: string, params?: { level?: string; unread?: boolean; limit?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.level) sp.set("level", params.level);
+    if (params?.unread) sp.set("unread", "true");
+    if (params?.limit) sp.set("limit", String(params.limit));
+    return api<Notification[]>(`/api/v1/orgs/${orgId}/notifications?${sp.toString()}`);
+  },
+  markNotificationRead: (orgId: string, id?: string) =>
+    api(`/api/v1/orgs/${orgId}/notifications`, { method: "PATCH", json: id ? { id } : { all: true } }),
+
+  // team detail (含 Team Admin + members)
+  teamDetail: (orgId: string, teamId: string) =>
+    api<{
+      id: string;
+      name: string;
+      slug: string;
+      avatarUrl: string | null;
+      orgId: string | null;
+      createdBy: string;
+      createdAt: string;
+      memberCount: number;
+      admins: {
+        userId: string;
+        name: string;
+        email: string | null;
+        avatarUrl: string | null;
+        role: TeamRole;
+      }[];
+      members: TeamMember[];
+    }>(`/api/v1/orgs/${orgId}/teams/${teamId}`),
+
+  // team member management
+  addTeamMember: (orgId: string, teamId: string, email: string, role: Exclude<TeamRole, "owner">) =>
+    api(`/api/v1/orgs/${orgId}/teams/${teamId}`, {
+      method: "POST",
+      json: { email, role },
+    }),
+  updateTeamMemberRole: (orgId: string, teamId: string, userId: string, role: Exclude<TeamRole, "owner">) =>
+    api(`/api/v1/orgs/${orgId}/teams/${teamId}`, {
+      method: "PATCH",
+      json: { userId, role },
+    }),
+  removeTeamMember: (orgId: string, teamId: string, userId: string) =>
+    api(`/api/v1/orgs/${orgId}/teams/${teamId}`, {
+      method: "DELETE",
+      json: { userId },
+    }),
 };

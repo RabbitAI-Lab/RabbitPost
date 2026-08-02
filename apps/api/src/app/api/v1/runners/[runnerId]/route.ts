@@ -11,6 +11,7 @@ import {
 } from "../../../../../lib/http";
 import { isEmbeddedRunner } from "../../../../../lib/embedded-runner";
 import { toRunner } from "../../../../../lib/runner";
+import { getTeamOrgId, notifyOrgAdmins } from "../../../../../lib/org";
 
 type Ctx = { params: Promise<{ runnerId: string }> };
 
@@ -62,6 +63,20 @@ export const PATCH = handleRoute<Ctx>(async (req, ctx, user) => {
     .where(eq(runners.id, runnerId))
     .returning();
   if (!row) throw new HttpError(404, "NOT_FOUND", "Runner not found");
+
+  // 通知企业管理员
+  const orgId = await getTeamOrgId(existing.teamId);
+  if (orgId) {
+    const action = patch.status ? `状态变更为 ${patch.status}` : patch.name ? `改名为「${patch.name}」` : "已更新";
+    await notifyOrgAdmins({
+      orgId,
+      actorId: user.id,
+      title: "Runner 更新",
+      body: `Runner「${existing.name}」${action}`,
+      teamId: existing.teamId,
+    });
+  }
+
   return ok<Runner>(toRunner(row));
 });
 
@@ -70,6 +85,19 @@ export const DELETE = handleRoute<Ctx>(async (_req, ctx, user) => {
   const { runnerId } = await ctx.params;
   const existing = await loadRunner(runnerId, user.id);
   ensureNotEmbedded(existing.name);
+
+  // 通知企业管理员（在删除前发送，删除后 teamId 仍可从 existing 获取）
+  const orgId = await getTeamOrgId(existing.teamId);
+  if (orgId) {
+    await notifyOrgAdmins({
+      orgId,
+      actorId: user.id,
+      title: "Runner 删除",
+      body: `Runner「${existing.name}」已被删除`,
+      teamId: existing.teamId,
+    });
+  }
+
   await db.delete(runners).where(eq(runners.id, runnerId));
   return ok({ deleted: true });
 });

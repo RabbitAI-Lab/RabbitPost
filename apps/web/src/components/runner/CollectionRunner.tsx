@@ -291,6 +291,7 @@ export default function CollectionRunner({ tab }: Props) {
             name: req.item.name,
             config: req.item.request!,
             itemId: req.item.id,
+            collectionVariables: collections.find((c) => c.id === tab.collectionId)?.variables,
           });
           collected.push({ req, result });
 

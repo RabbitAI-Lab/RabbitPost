@@ -46,7 +46,8 @@ export const POST = handleRunnerRoute(async (req, _ctx, runner) => {
     targetType: body.targetType,
     targetName: target.targetName,
     concurrency: body.concurrency ?? 4,
-    variables: await loadRunnerVariables(body.environmentId ?? null),
+    // Collection 级变量为底，Environment 覆盖
+    variables: await loadRunnerVariables(body.environmentId ?? null, target.collectionId),
     items: target.items,
   };
   return ok<RunnerJobAssignment>(assignment);

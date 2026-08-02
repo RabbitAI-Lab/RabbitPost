@@ -52,7 +52,7 @@ function EntryRow({ result: r }: { result: RunJobResult }) {
               type="danger"
               className="code-font"
               style={{
-                fontSize: 11,
+                fontSize: 12,
                 maxWidth: 260,
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -64,11 +64,11 @@ function EntryRow({ result: r }: { result: RunJobResult }) {
             </Typography.Text>
           </Tooltip>
         ) : (
-          <span className="code-font" style={{ fontSize: 11, display: "inline-flex", gap: 8 }}>
+          <span className="code-font" style={{ fontSize: 12, display: "inline-flex", gap: 8 }}>
             <span style={{ color: statusColor(r.status), fontWeight: 600 }}>
               {r.status} {r.statusText}
             </span>
-            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {r.durationMs}ms
             </Typography.Text>
           </span>
@@ -76,7 +76,7 @@ function EntryRow({ result: r }: { result: RunJobResult }) {
         {tests.length > 0 && (
           <span
             className="code-font"
-            style={{ fontSize: 11, color: passed === tests.length ? "#52c41a" : "#ff4d4f" }}
+            style={{ fontSize: 12, color: passed === tests.length ? "#52c41a" : "#ff4d4f" }}
           >
             {passed === tests.length ? "✓" : "✗"} {passed}/{tests.length}
           </span>
@@ -89,14 +89,14 @@ function EntryRow({ result: r }: { result: RunJobResult }) {
             <div
               key={i}
               className="code-font"
-              style={{ display: "flex", gap: 6, fontSize: 11, lineHeight: "18px" }}
+              style={{ display: "flex", gap: 6, fontSize: 12, lineHeight: "18px" }}
             >
               <span style={{ color: t.passed ? "#52c41a" : "#ff4d4f" }}>
                 {t.passed ? "✓" : "✗"}
               </span>
               <span>{t.name}</span>
               {t.error && (
-                <Typography.Text type="danger" style={{ fontSize: 11 }}>
+                <Typography.Text type="danger" style={{ fontSize: 12 }}>
                   — {t.error}
                 </Typography.Text>
               )}
@@ -268,14 +268,14 @@ export default function CaseRunHistoryPanel({ records, onRecordLoaded }: Props) 
                   </Typography.Text>
                   <Typography.Text
                     type="secondary"
-                    style={{ fontSize: 11, whiteSpace: "nowrap", flexShrink: 0 }}
+                    style={{ fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 }}
                   >
                     {formatTime(job.finishedAt ?? job.createdAt)}
                   </Typography.Text>
                   <span style={{ flex: 1, minWidth: 4 }} />
                   {/* 成败由行首状态点表达，通过/失败计数不重复显示；仅保留断言比 */}
                   {sum.testsTotal > 0 && (
-                    <Typography.Text type="secondary" style={{ fontSize: 11, flexShrink: 0, whiteSpace: "nowrap" }}>
+                    <Typography.Text type="secondary" style={{ fontSize: 12, flexShrink: 0, whiteSpace: "nowrap" }}>
                       断言 {sum.testsPassed}/{sum.testsTotal}
                     </Typography.Text>
                   )}

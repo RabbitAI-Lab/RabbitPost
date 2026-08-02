@@ -50,7 +50,7 @@ function statusColor(status?: number): string {
 /** 接口用例面板：列表 + New Case / Run All / 行内 Run / Open / 重命名 / 复制 / 重置 / 删除 */
 export default function CasesPanel({ tab }: Props) {
   const { message, modal } = App.useApp();
-  const { currentWorkspaceId, activeEnvironmentId, environments } = useAppStore();
+  const { currentWorkspaceId, activeEnvironmentId, environments, collections } = useAppStore();
   const itemId = tab.itemId;
   const cases = useCasesStore((s) => (itemId ? s.byItemId[itemId] : undefined));
   const { load, upsert, remove } = useCasesStore();
@@ -100,6 +100,7 @@ export default function CasesPanel({ tab }: Props) {
         name: `${tab.name} / ${caseRow.name}`,
         config: caseRow.request,
         itemId: tab.itemId ?? undefined, // 传入 Collection Item ID，用于 Runner 模式
+        collectionVariables: collections.find((c) => c.id === tab.collectionId)?.variables,
       });
       const testTotal = r.testResults?.length ?? 0;
       const testPassed = (r.testResults ?? []).filter((t) => t.passed).length;
@@ -443,7 +444,7 @@ export default function CasesPanel({ tab }: Props) {
                   type="secondary"
                   className="code-font"
                   style={{
-                    fontSize: 11,
+                    fontSize: 12,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -462,7 +463,7 @@ export default function CasesPanel({ tab }: Props) {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 8,
-                      fontSize: 11,
+                      fontSize: 12,
                       flexShrink: 0,
                       maxWidth: "45%",
                       minWidth: 0,
@@ -474,7 +475,7 @@ export default function CasesPanel({ tab }: Props) {
                         <Typography.Text
                           type="danger"
                           style={{
-                            fontSize: 11,
+                            fontSize: 12,
                             maxWidth: 220,
                             overflow: "hidden",
                             textOverflow: "ellipsis",
@@ -490,7 +491,7 @@ export default function CasesPanel({ tab }: Props) {
                         <span style={{ color: statusColor(r.status), fontWeight: 600 }}>
                           {r.status} {r.statusText}
                         </span>
-                        <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                           {r.durationMs}ms
                         </Typography.Text>
                       </>

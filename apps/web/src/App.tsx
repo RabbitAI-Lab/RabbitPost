@@ -15,6 +15,7 @@ import ConsoleRunners from "./pages/console/ConsoleRunners";
 import ConsoleAuditLog from "./pages/console/ConsoleAuditLog";
 import ConsoleSettings from "./pages/console/ConsoleSettings";
 import ConsoleBilling from "./pages/console/ConsoleBilling";
+import ConsoleNotifications from "./pages/console/ConsoleNotifications";
 import { useAppStore } from "./stores/app";
 
 export default function App() {
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="api-keys" element={<ConsoleApiKeys />} />
         <Route path="runners" element={<ConsoleRunners />} />
         <Route path="audit" element={<ConsoleAuditLog />} />
+        <Route path="notifications" element={<ConsoleNotifications />} />
         <Route path="settings" element={<ConsoleSettings />} />
         <Route path="billing" element={<ConsoleBilling />} />
       </Route>

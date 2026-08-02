@@ -10,6 +10,7 @@ import {
 } from "../../../../../../lib/http";
 import { isEmbeddedRunner } from "../../../../../../lib/embedded-runner";
 import { issueRunnerToken, toRunner } from "../../../../../../lib/runner";
+import { getTeamOrgId, notifyOrgAdmins } from "../../../../../../lib/org";
 
 type Ctx = { params: Promise<{ runnerId: string }> };
 
@@ -42,5 +43,18 @@ export const POST = handleRoute<Ctx>(async (_req, ctx, user) => {
     .where(eq(runners.id, runnerId))
     .returning();
   if (!row) throw new HttpError(404, "NOT_FOUND", "Runner not found");
+
+  // 通知企业管理员
+  const orgId = await getTeamOrgId(existing.teamId);
+  if (orgId) {
+    await notifyOrgAdmins({
+      orgId,
+      actorId: user.id,
+      title: "Runner Token 重置",
+      body: `Runner「${existing.name}」的 Token 已被重置，旧 Token 立即失效`,
+      teamId: existing.teamId,
+    });
+  }
+
   return ok<RunnerWithToken>({ runner: toRunner(row), token });
 });

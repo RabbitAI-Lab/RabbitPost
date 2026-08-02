@@ -12,7 +12,7 @@ import {
   ok,
   requireOrgRole,
 } from "../../../../../../lib/http";
-import { slugifyOrg, writeAuditLog } from "../../../../../../lib/org";
+import { slugifyOrg, writeAuditLog, notifyOrgAdmins } from "../../../../../../lib/org";
 
 type Ctx = { params: Promise<{ orgId: string }> };
 
@@ -114,6 +114,15 @@ export const POST = handleRoute<Ctx>(async (req, ctx, user) => {
     targetType: "team",
     targetId: team.id,
     targetName: team.name,
+  });
+
+  // 通知企业管理员
+  await notifyOrgAdmins({
+    orgId,
+    actorId: user.id,
+    title: "新团队创建",
+    body: `团队「${team.name}」已创建`,
+    teamId: team.id,
   });
 
   return ok(

@@ -223,7 +223,7 @@ export default function DocumentsPanel({ visible = true }: { visible?: boolean }
             style={{ fontSize: 15, color: "#8c8c8c", marginRight: 5, flexShrink: 0 }}
           />
         )}
-        <Typography.Text ellipsis style={{ fontSize: 13, flex: 1 }}>
+        <Typography.Text ellipsis style={{ fontSize: 12, flex: 1, color: "#6b6b6b" }}>
           {data.name}
         </Typography.Text>
         {/* 目录：hover 直接显示新建文档 / 新建子目录按钮 */}

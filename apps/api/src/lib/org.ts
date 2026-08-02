@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { Organization, OrgMember, UsageMetric } from "@rabbitpost/shared";
 import { db } from "../db";
-import { auditLogs, organizationMembers, organizations, teams, usageEvents, users } from "../db/schema";
+import { auditLogs, notifications, organizationMembers, organizations, teams, usageEvents, users } from "../db/schema";
 
 /** Organization 行 → DTO */
 export function toOrg(
@@ -21,7 +21,6 @@ export function toOrg(
     role,
   };
 }
-
 /** 生成唯一 slug（带随机后缀） */
 export function slugifyOrg(name: string): string {
   const base = name
@@ -102,4 +101,73 @@ export function toOrgMember(
 export async function getOrgTeamIds(orgId: string): Promise<string[]> {
   const rows = await db.select({ id: teams.id }).from(teams).where(eq(teams.orgId, orgId));
   return rows.map((r) => r.id);
+}
+
+/** 通过 teamId 获取其所属企业的 orgId（非企业团队返回 null） */
+export async function getTeamOrgId(teamId: string): Promise<string | null> {
+  const [t] = await db.select({ orgId: teams.orgId }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  return t?.orgId ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// 通知服务：企业/团队变更时写入通知
+// ---------------------------------------------------------------------------
+
+/** 获取操作者显示名 */
+async function getActorName(actorId: string): Promise<string> {
+  const [u] = await db.select({ name: users.name }).from(users).where(eq(users.id, actorId)).limit(1);
+  return u?.name ?? "Unknown";
+}
+
+/** 获取团队名称 */
+async function getTeamName(teamId: string): Promise<string | null> {
+  const [t] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, teamId)).limit(1);
+  return t?.name ?? null;
+}
+
+/** 写入一条通知（通知企业管理员） */
+export async function notifyOrgAdmins(input: {
+  orgId: string;
+  actorId: string;
+  title: string;
+  body: string;
+  teamId?: string | null;
+}): Promise<void> {
+  const actorName = await getActorName(input.actorId);
+  let teamName: string | null = null;
+  if (input.teamId) teamName = await getTeamName(input.teamId);
+  await db.insert(notifications).values({
+    orgId: input.orgId,
+    level: "org_admin",
+    title: input.title,
+    body: input.body,
+    actorId: input.actorId,
+    actorName,
+    teamId: input.teamId ?? null,
+    teamName,
+    read: false,
+  });
+}
+
+/** 写入一条通知（通知团队管理员） */
+export async function notifyTeamAdmins(input: {
+  orgId: string;
+  teamId: string;
+  actorId: string;
+  title: string;
+  body: string;
+}): Promise<void> {
+  const actorName = await getActorName(input.actorId);
+  const teamName = await getTeamName(input.teamId);
+  await db.insert(notifications).values({
+    orgId: input.orgId,
+    level: "team_admin",
+    title: input.title,
+    body: input.body,
+    actorId: input.actorId,
+    actorName,
+    teamId: input.teamId,
+    teamName,
+    read: false,
+  });
 }

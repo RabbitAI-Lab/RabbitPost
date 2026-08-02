@@ -1,4 +1,4 @@
-import type { Collection, CollectionItem, RequestConfig } from "./index";
+import type { Collection, CollectionItem, KeyValueItem, RequestConfig } from "./index";
 
 /**
  * RabbitPost Collection 交换格式：导出（文件下载 / 公开分享链接）与导入共用，
@@ -22,6 +22,8 @@ export interface RpCollectionFile {
   exportedAt: string;
   name: string;
   description?: string | null;
+  /** Collection 级变量（导出 / 导入共用） */
+  variables?: KeyValueItem[];
   items: RpCollectionNode[];
 }
 
@@ -39,7 +41,7 @@ function toNodes(items: CollectionItem[]): RpCollectionNode[] {
 }
 
 export function buildCollectionFile(
-  collection: Pick<Collection, "name" | "description">,
+  collection: Pick<Collection, "name" | "description" | "variables">,
   tree: CollectionItem[],
 ): RpCollectionFile {
   return {
@@ -48,6 +50,7 @@ export function buildCollectionFile(
     exportedAt: new Date().toISOString(),
     name: collection.name,
     description: collection.description,
+    variables: collection.variables ?? [],
     items: toNodes(tree),
   };
 }
@@ -82,7 +85,7 @@ function parseNodes(raw: unknown): RpCollectionNode[] {
  */
 export function parseCollectionFile(
   raw: unknown,
-): Pick<RpCollectionFile, "name" | "description" | "items"> | null {
+): Pick<RpCollectionFile, "name" | "description" | "variables" | "items"> | null {
   const file = raw as Record<string, unknown> | null;
   if (!file || file.format !== RP_COLLECTION_FORMAT) return null;
   const name = typeof file.name === "string" ? file.name.trim() : "";
@@ -90,6 +93,7 @@ export function parseCollectionFile(
   return {
     name,
     description: typeof file.description === "string" ? file.description : null,
+    variables: Array.isArray(file.variables) ? (file.variables as KeyValueItem[]) : [],
     items: parseNodes(file.items),
   };
 }

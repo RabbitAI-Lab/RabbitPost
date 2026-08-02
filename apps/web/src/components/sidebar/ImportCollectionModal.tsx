@@ -417,6 +417,8 @@ async function importNodes(
 interface ParsedSource {
   name: string;
   description: string | null;
+  /** Collection 级变量（仅 RabbitPost 格式携带） */
+  variables: KeyValueItem[];
   nodes: RpCollectionNode[];
 }
 
@@ -434,7 +436,12 @@ function parseSource(text: string): ParsedSource {
 
   const rp = parseCollectionFile(raw);
   if (rp) {
-    return { name: rp.name, description: rp.description ?? null, nodes: rp.items };
+    return {
+      name: rp.name,
+      description: rp.description ?? null,
+      variables: rp.variables ?? [],
+      nodes: rp.items,
+    };
   }
 
   const pm = raw as PmCollection;
@@ -444,7 +451,7 @@ function parseSource(text: string): ParsedSource {
       "不是有效的 RabbitPost Collection 内容（也未识别为 Postman Collection）",
     );
   }
-  return { name: pmName, description: null, nodes: pmToNodes(pm.item) };
+  return { name: pmName, description: null, variables: [], nodes: pmToNodes(pm.item) };
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +481,10 @@ export default function ImportCollectionModal({ open, onClose }: Props) {
         parsed.name,
         parsed.description ?? undefined,
       );
+      // 导入 Collection 级变量（RabbitPost 格式携带）
+      if (parsed.variables.length) {
+        await collectionsApi.update(col.id, { variables: parsed.variables });
+      }
       const count = await importNodes(col.id, parsed.nodes, null);
       await refreshCollections();
       // 新建 Collection 默认排在末尾，导入后重排到第一个

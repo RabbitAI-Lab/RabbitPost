@@ -163,10 +163,10 @@ export default function SpecsPanel() {
               >
                 <FileTextOutlined style={{ color: "#8c8c8c", flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <Typography.Text ellipsis style={{ fontSize: 12, display: "block" }}>
+                  <Typography.Text ellipsis style={{ fontSize: 12, display: "block", color: "#6b6b6b" }}>
                     {spec.name}
                   </Typography.Text>
-                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {SPEC_TYPE_LABELS[spec.type]} · {SPEC_FORMAT_LABELS[spec.format]}
                   </Typography.Text>
                 </div>

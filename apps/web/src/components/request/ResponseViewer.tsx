@@ -5,6 +5,7 @@ import type { ExecuteResult, HistoryEntry } from "@rabbitpost/shared";
 import { historyApi } from "../../api";
 import { useAppStore } from "../../stores/app";
 import { useTabsStore } from "../../stores/tabs";
+import ResponseBodyViewer from "./ResponseBodyViewer";
 
 interface Props {
   response: ExecuteResult | null;
@@ -31,18 +32,6 @@ function formatSize(bytes?: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function prettyBody(bodyText?: string, contentType?: string): string {
-  if (!bodyText) return "";
-  if (contentType?.includes("json")) {
-    try {
-      return JSON.stringify(JSON.parse(bodyText), null, 2);
-    } catch {
-      return bodyText;
-    }
-  }
-  return bodyText;
 }
 
 /** 无响应时各 tab 的占位（History 除外） */
@@ -117,7 +106,7 @@ function HistoryPane() {
             render: (_, entry) => (
               <Tag
                 color={METHOD_COLORS[entry.request.method] ?? "default"}
-                style={{ marginRight: 0, fontSize: 11 }}
+                style={{ marginRight: 0, fontSize: 12 }}
               >
                 {entry.request.method}
               </Tag>
@@ -142,11 +131,11 @@ function HistoryPane() {
             width: 90,
             render: (_, entry) =>
               entry.response ? (
-                <Tag color={statusColor(entry.response.status)} style={{ fontSize: 11 }}>
+                <Tag color={statusColor(entry.response.status)} style={{ fontSize: 12 }}>
                   {entry.response.status}
                 </Tag>
               ) : (
-                <Tag color="error" style={{ fontSize: 11 }}>
+                <Tag color="error" style={{ fontSize: 12 }}>
                   Error
                 </Tag>
               ),
@@ -217,20 +206,10 @@ export default function ResponseViewer({ response, sending }: Props) {
           key: "body",
           label: "Body",
           children: hasResponse ? (
-            <pre
-              className="code-font"
-              style={{
-                background: "#fff",
-                border: "1px solid #f0f0f0",
-                borderRadius: 6,
-                padding: 12,
-                margin: 0,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-              }}
-            >
-              {prettyBody(response!.bodyText, contentType)}
-            </pre>
+            <ResponseBodyViewer
+              bodyText={response!.bodyText}
+              contentType={contentType}
+            />
           ) : (
             errorPane ?? <EmptyPane sending={sending} />
           ),

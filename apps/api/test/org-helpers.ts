@@ -74,10 +74,11 @@ async function createUserWithToken(name: string, email: string): Promise<OrgUser
  * 同时写入若干审计日志和用量事件。
  */
 export async function seedOrg(): Promise<OrgSeed> {
-  const owner = await createUserWithToken("Org Owner", "org-owner@test.com");
-  const admin = await createUserWithToken("Org Admin", "org-admin@test.com");
-  const billing = await createUserWithToken("Org Billing", "org-billing@test.com");
-  const member = await createUserWithToken("Org Member", "org-member@test.com");
+  const id = crypto.randomBytes(3).toString("hex");
+  const owner = await createUserWithToken("Org Owner", `org-owner-${id}@test.com`);
+  const admin = await createUserWithToken("Org Admin", `org-admin-${id}@test.com`);
+  const billing = await createUserWithToken("Org Billing", `org-billing-${id}@test.com`);
+  const member = await createUserWithToken("Org Member", `org-member-${id}@test.com`);
 
   const [org] = await db
     .insert(organizations)
@@ -159,7 +160,7 @@ export async function seedOrg(): Promise<OrgSeed> {
  * 返回 owner token 和 orgId。
  */
 export async function seedOtherOrg(): Promise<{ orgId: string; apiToken: string; userId: string }> {
-  const otherOwner = await createUserWithToken("Other Owner", "other@test.com");
+  const otherOwner = await createUserWithToken("Other Owner", `other-${crypto.randomBytes(3).toString("hex")}@test.com`);
   const [org] = await db
     .insert(organizations)
     .values({

@@ -383,6 +383,12 @@ pub struct JobResult {
     /// 脚本执行后的变量表（含 rp.variables.set 的改动）；场景执行时用于步骤间传递
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script_variables: Option<std::collections::HashMap<String, String>>,
+    /// 响应头（上报服务端，供 Send 按钮 Body / Headers tab 与报告展示）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_headers: Option<std::collections::HashMap<String, String>>,
+    /// 响应体文本（截断上报，主要供 Send 按钮 Body tab 展示；二进制以 lossy UTF-8 近似）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_body: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -646,6 +652,8 @@ mod tests {
             test_results: None,
             console_logs: None,
             script_variables: None,
+            response_headers: None,
+            response_body: None,
         };
         let json = serde_json::to_value(&result).unwrap();
         // 服务端 results 接口按 camelCase 解析
@@ -677,6 +685,8 @@ mod tests {
             test_results: None,
             console_logs: None,
             script_variables: None,
+            response_headers: None,
+            response_body: None,
         };
         let json = serde_json::to_value(&result).unwrap();
         assert_eq!(json.get("caseId").and_then(|v| v.as_str()), Some("c1"));

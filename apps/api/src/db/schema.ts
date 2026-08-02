@@ -14,6 +14,7 @@ import type {
   ConsoleLogEntry,
   EnvironmentVariable,
   HistoryResponseSummary,
+  KeyValueItem,
   OrgPlan,
   OrgRole,
   RequestConfig,
@@ -91,6 +92,8 @@ export const organizations = pgTable(
     requestQuota: integer("request_quota").notNull().default(0),
     /** SSO / SCIM 配置（JSON） */
     ssoConfig: jsonb("sso_config").$type<Record<string, unknown>>(),
+    /** 企业管理员通知邮箱（团队/工作区变更通知收件人） */
+    adminEmail: text("admin_email"),
     createdBy: uuid("created_by")
       .references(() => users.id)
       .notNull(),
@@ -144,6 +147,39 @@ export const auditLogs = pgTable(
       .notNull(),
   },
   (t) => [index("audit_logs_org_created_idx").on(t.orgId, t.createdAt)],
+);
+
+// ---------------------------------------------------------------------------
+// notifications（企业通知：团队/工作区/成员变更通知）
+// ---------------------------------------------------------------------------
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: uuid("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    /** 通知级别：org_admin / team_admin */
+    level: text("level").$type<"org_admin" | "team_admin">().notNull(),
+    /** 通知标题 */
+    title: text("title").notNull(),
+    /** 通知正文 */
+    body: text("body").notNull(),
+    /** 触发者 id */
+    actorId: uuid("actor_id").references(() => users.id),
+    /** 触发者名称快照 */
+    actorName: text("actor_name"),
+    /** 关联团队 id（team_admin 级别通知时必填） */
+    teamId: uuid("team_id"),
+    /** 关联团队名称快照 */
+    teamName: text("team_name"),
+    /** 是否已读 */
+    read: boolean("read").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("notifications_org_created_idx").on(t.orgId, t.createdAt)],
 );
 
 // ---------------------------------------------------------------------------
@@ -243,6 +279,8 @@ export const collections = pgTable(
     description: text("description"),
     /** 侧边栏手动拖拽排序 */
     sortOrder: integer("sort_order").notNull().default(0),
+    /** Collection 级变量（作用域为当前 Collection，优先级低于 Environment） */
+    variables: jsonb("variables").$type<KeyValueItem[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

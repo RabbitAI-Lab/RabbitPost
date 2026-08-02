@@ -3,6 +3,8 @@ interface TrailNode {
   id: string;
   name: string;
   children?: TrailNode[] | null;
+  /** 仅 CollectionItem 的场景测试根目录为 true */
+  isScenarioRoot?: boolean;
 }
 
 /** 在树中查找 itemId 的祖先目录名链（不含自身）；未找到返回 null */
@@ -31,4 +33,22 @@ export function findNodeName(nodes: TrailNode[], id: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * 判断 itemId 是否位于场景测试目录子树内
+ * （自身为场景根目录，或为某个场景根目录的后代节点）。
+ */
+export function isInScenarioTree(nodes: TrailNode[], itemId: string): boolean {
+  const walk = (list: TrailNode[], inside: boolean): boolean => {
+    for (const node of list) {
+      const isScenario = node.isScenarioRoot === true;
+      if (node.id === itemId) return inside || isScenario;
+      if (node.children?.length) {
+        if (walk(node.children, inside || isScenario)) return true;
+      }
+    }
+    return false;
+  };
+  return walk(nodes, false);
 }
