@@ -19,7 +19,7 @@ export default function SpecIssuesPanel({ issues, onJump }: Props) {
   const visible = filter === "all" ? issues : issues.filter((i) => i.severity === filter);
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+    <div style={{ height: "100%", maxHeight: 100, display: "flex", flexDirection: "column" }}>
       <div
         style={{
           height: 30,

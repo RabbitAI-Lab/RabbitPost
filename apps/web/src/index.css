@@ -254,15 +254,28 @@ input.ant-input.code-font {
   line-height: 1.5;
 }
 
-/* spec 定义编辑器（CodeMirror）：撑满分栏高度，字号与其它代码区域一致 */
+/* spec 定义编辑器（CodeMirror）：撑满分栏高度，字号与其它代码区域一致。
+   注意：@uiw/react-codemirror 的 height 属性只作用于 .cm-editor，其自渲染的
+   .cm-theme-light/dark 包裹层没有高度；整条链（包裹层→editor→scroller）都须
+   显式钉死，否则编辑器展开为全内容高度被外层 overflow:hidden 裁剪，无法滚动 */
+.spec-cm [class^="cm-theme"],
+.response-cm [class^="cm-theme"] {
+  height: 100%;
+}
 .spec-cm .cm-editor,
 .response-cm .cm-editor {
   height: 100%;
 }
 .spec-cm .cm-scroller,
 .response-cm .cm-scroller {
+  height: 100%;
+  overflow: auto;
+}
+.spec-cm .cm-scroller,
+.response-cm .cm-scroller {
   font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
+  overflow: auto;
 }
 .spec-cm .cm-editor.cm-focused,
 .response-cm .cm-editor.cm-focused {

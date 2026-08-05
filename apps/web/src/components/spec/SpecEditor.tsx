@@ -244,7 +244,9 @@ export default function SpecEditor({ tab }: Props) {
 
       <Splitter style={{ flex: 1, minHeight: 0 }}>
         <Splitter.Panel defaultSize="58%" min="25%" style={{ paddingRight: 4 }}>
-          <Splitter layout="vertical">
+          {/* 内层分栏必须显式撑满：antd Splitter Panel 不会把高度传给子元素，
+              断裂后 CodeMirror 会展开为全内容高度被外层裁剪，无法滚动 */}
+          <Splitter layout="vertical" style={{ height: "100%" }}>
             <Splitter.Panel defaultSize="68%" min="20%">
               <div
                 className="spec-cm"
@@ -265,30 +267,40 @@ export default function SpecEditor({ tab }: Props) {
                 />
               </div>
             </Splitter.Panel>
-            <Splitter.Panel min="15%" style={{ paddingTop: 4 }}>
-              <SpecIssuesPanel
-                issues={issues}
-                onJump={(issue) => {
-                  const view = cmRef.current?.view;
-                  if (!view) return;
-                  const doc = view.state.doc;
-                  const line = doc.line(Math.min(Math.max(issue.line, 1), doc.lines));
-                  const pos = Math.min(
-                    line.from + Math.max(issue.column - 1, 0),
-                    line.to,
-                  );
-                  view.dispatch({
-                    selection: { anchor: pos },
-                    effects: EditorView.scrollIntoView(pos, { y: "center" }),
-                  });
-                  view.focus();
-                }}
-              />
-            </Splitter.Panel>
+            {/* 无 issue 时收敛为固定小条（最高 100px），不参与分栏拖拽；
+                有 issue 时保持可拖拽分栏 */}
+            {issues.length === 0 ? (
+              <div style={{ height: 100, flexShrink: 0, paddingTop: 4 }}>
+                <SpecIssuesPanel issues={issues} onJump={() => {}} />
+              </div>
+            ) : (
+              <Splitter.Panel min="15%" style={{ paddingTop: 4 }}>
+                <SpecIssuesPanel
+                  issues={issues}
+                  onJump={(issue) => {
+                    const view = cmRef.current?.view;
+                    if (!view) return;
+                    const doc = view.state.doc;
+                    const line = doc.line(Math.min(Math.max(issue.line, 1), doc.lines));
+                    const pos = Math.min(
+                      line.from + Math.max(issue.column - 1, 0),
+                      line.to,
+                    );
+                    view.dispatch({
+                      selection: { anchor: pos },
+                      effects: EditorView.scrollIntoView(pos, { y: "center" }),
+                    });
+                    view.focus();
+                  }}
+                />
+              </Splitter.Panel>
+            )}
           </Splitter>
         </Splitter.Panel>
         <Splitter.Panel min="20%" style={{ paddingLeft: 4 }}>
-          <SpecDocsPreview content={deferredContent} type={tab.type} />
+          <div className="slim-scroll" style={{ height: "100%", overflow: "auto" }}>
+            <SpecDocsPreview content={deferredContent} type={tab.type} />
+          </div>
         </Splitter.Panel>
       </Splitter>
     </div>

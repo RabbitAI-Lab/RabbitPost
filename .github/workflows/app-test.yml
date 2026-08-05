@@ -52,6 +52,10 @@ jobs:
       - name: typecheck
         run: pnpm typecheck
 
+      # shared 纯函数单测（spec 校验/outline/生成 Collection，无外部依赖）
+      - name: test shared
+        run: pnpm --filter @rabbitpost/shared test
+
       # API 路由级测试：独立测试库 rabbitpost_test（globalSetup 自动建库 + drizzle push）
       - name: test api
         run: pnpm --filter @rabbitpost/api test
