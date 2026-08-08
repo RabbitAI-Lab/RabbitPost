@@ -27,6 +27,7 @@ const PROTOCOL_META: Record<RequestProtocol, { label: string; icon: ReactNode }>
   websocket: { label: "WebSocket", icon: <SwapOutlined style={{ color: "#faad14" }} /> },
   socketio: { label: "Socket.IO", icon: <NodeIndexOutlined style={{ color: "#13c2c2" }} /> },
   mqtt: { label: "MQTT", icon: <WifiOutlined style={{ color: "#660066" }} /> },
+  sse: { label: "SSE", icon: <ThunderboltOutlined style={{ color: "#eb2f96" }} /> },
 };
 
 interface Props {
@@ -112,7 +113,18 @@ export default function RequestTitleBar({ tab, extra }: Props) {
               </span>
             ),
           }))}
-          onChange={(p) => updateConfig(tab.key, { protocol: p })}
+          onChange={(p) => {
+            // 切到 GraphQL：固定 POST + body 切为 GraphQL（Query/Variables），执行走 GraphQL-over-HTTP
+            if (p === "graphql") {
+              updateConfig(tab.key, {
+                protocol: p,
+                method: "POST",
+                body: { ...tab.config.body, type: "graphql" },
+              });
+            } else {
+              updateConfig(tab.key, { protocol: p });
+            }
+          }}
         />
       )}
 

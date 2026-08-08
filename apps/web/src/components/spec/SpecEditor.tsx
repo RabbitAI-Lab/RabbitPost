@@ -267,34 +267,32 @@ export default function SpecEditor({ tab }: Props) {
                 />
               </div>
             </Splitter.Panel>
-            {/* 无 issue 时收敛为固定小条（最高 100px），不参与分栏拖拽；
-                有 issue 时保持可拖拽分栏 */}
-            {issues.length === 0 ? (
-              <div style={{ height: 100, flexShrink: 0, paddingTop: 4 }}>
-                <SpecIssuesPanel issues={issues} onJump={() => {}} />
-              </div>
-            ) : (
-              <Splitter.Panel min="15%" style={{ paddingTop: 4 }}>
-                <SpecIssuesPanel
-                  issues={issues}
-                  onJump={(issue) => {
-                    const view = cmRef.current?.view;
-                    if (!view) return;
-                    const doc = view.state.doc;
-                    const line = doc.line(Math.min(Math.max(issue.line, 1), doc.lines));
-                    const pos = Math.min(
-                      line.from + Math.max(issue.column - 1, 0),
-                      line.to,
-                    );
-                    view.dispatch({
-                      selection: { anchor: pos },
-                      effects: EditorView.scrollIntoView(pos, { y: "center" }),
-                    });
-                    view.focus();
-                  }}
-                />
-              </Splitter.Panel>
-            )}
+            {/* 无 issue 时收敛为固定小条（最高 100px）；有 issue 时可拖拽分栏。
+                始终保留 Splitter 结构：条件渲染会让 antd 用缓存的 flex-basis 撑高面板 */}
+            <Splitter.Panel
+              min="15%"
+              size={issues.length === 0 ? 100 : undefined}
+              style={{ paddingTop: 4 }}
+            >
+              <SpecIssuesPanel
+                issues={issues}
+                onJump={(issue) => {
+                  const view = cmRef.current?.view;
+                  if (!view) return;
+                  const doc = view.state.doc;
+                  const line = doc.line(Math.min(Math.max(issue.line, 1), doc.lines));
+                  const pos = Math.min(
+                    line.from + Math.max(issue.column - 1, 0),
+                    line.to,
+                  );
+                  view.dispatch({
+                    selection: { anchor: pos },
+                    effects: EditorView.scrollIntoView(pos, { y: "center" }),
+                  });
+                  view.focus();
+                }}
+              />
+            </Splitter.Panel>
           </Splitter>
         </Splitter.Panel>
         <Splitter.Panel min="20%" style={{ paddingLeft: 4 }}>

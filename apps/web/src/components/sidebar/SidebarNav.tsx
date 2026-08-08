@@ -5,15 +5,17 @@ import {
   FolderAddOutlined,
   GlobalOutlined,
   HistoryOutlined,
+  DownloadOutlined,
   PlusOutlined,
   SearchOutlined,
   UnorderedListOutlined,
-  UploadOutlined,
 } from "@ant-design/icons";
 import { Button, Dropdown, Input } from "antd";
 import type { MenuProps } from "antd";
 import { useMemo, useState } from "react";
+import type { RequestProtocol } from "@rabbitpost/shared";
 import { documentsApi, environmentsApi } from "../../api";
+import { NEW_REQUEST_PROTOCOLS } from "../../lib/protocols";
 import { useContainerSize } from "../../lib/use-container-size";
 import { useAppStore } from "../../stores/app";
 import { useTabsStore } from "../../stores/tabs";
@@ -165,7 +167,12 @@ export default function SidebarNav() {
         key: "request",
         icon: <FileAddOutlined />,
         label: "Request",
-        onClick: () => openDraft(),
+        // 协议子菜单：以指定协议打开新草稿（草稿阶段仍可切换协议）
+        children: NEW_REQUEST_PROTOCOLS.map((p) => ({
+          key: `request-${p.value}`,
+          label: p.label,
+          onClick: () => openDraft(undefined, p.value as RequestProtocol),
+        })),
       },
       {
         key: "collection",
@@ -286,7 +293,7 @@ export default function SidebarNav() {
           </Dropdown>
           <Button
             size="small"
-            icon={<UploadOutlined />}
+            icon={<DownloadOutlined />}
             title="Import"
             disabled={!currentWorkspaceId}
             onClick={() => setImportOpen(true)}

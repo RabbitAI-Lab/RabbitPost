@@ -27,6 +27,8 @@ interface Props {
   className?: string;
   style?: CSSProperties;
   suffix?: ReactNode;
+  /** 禁用时不渲染变量高亮层，直接用 antd 原生禁用样式 */
+  disabled?: boolean;
 }
 
 /**
@@ -47,6 +49,7 @@ export default function VarInput({
   className,
   style,
   suffix,
+  disabled,
 }: Props) {
   const envVars = useEnvVars();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -132,7 +135,7 @@ export default function VarInput({
       onMouseMove={handleMouseMove}
       onMouseLeave={clearHover}
     >
-      {metrics && (
+      {metrics && !disabled && (
         <>
           {/* 高亮层：彩色渲染 {{var}}，随 input 横向滚动 */}
           <div
@@ -176,10 +179,15 @@ export default function VarInput({
         suffix={suffix}
         placeholder={placeholder}
         value={value}
+        disabled={disabled}
         style={{
           position: "relative",
           background: "transparent",
-          color: composing ? "rgba(0, 0, 0, 0.85)" : "transparent",
+          color: disabled
+            ? undefined
+            : composing
+              ? "rgba(0, 0, 0, 0.85)"
+              : "transparent",
           caretColor: "rgba(0, 0, 0, 0.85)",
         }}
         onChange={(e) => {

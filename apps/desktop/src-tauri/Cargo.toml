@@ -1,0 +1,21 @@
+[package]
+name = "rabbitpost-desktop"
+version = "0.1.0"
+description = "RabbitPost desktop client (thin shell over the web app)"
+authors = ["RabbitPost"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "rabbitpost_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[features]
+# Tauri 的自定义协议仅在 macOS/Linux 需要（Windows 用 http://tauri.localhost）
+custom-protocol = ["tauri/custom-protocol"]

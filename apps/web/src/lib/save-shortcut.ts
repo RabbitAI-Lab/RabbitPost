@@ -89,18 +89,41 @@ export function confirmCloseTab(key: string) {
     save();
   };
 
+  // 按钮尺寸对齐 Postman：高 24px、字号 12px、横向内边距 12px
+  const btnStyle = { height: 24, fontSize: 12, padding: "0 12px" };
+
   const modal = Modal.confirm({
-    title: "关闭标签页",
-    content: `「${tab.name}」有未保存的修改，关闭后将丢失。`,
-    // 三按钮：取消 / 直接关闭 / 保存并关闭（用 createElement 避免本文件改为 .tsx）
+    // 样式参考 Postman「Save changes?」弹窗：垂直居中、无警告图标、右上角 X 关闭；
+    // 标题 13px 半粗体、正文 12px（tab 名加粗）、按钮 24px 高 / 12px 字号；
+    // 底部左侧「直接关闭」（对应 Don't save），右侧「取消 / 保存并关闭」
+    centered: true,
+    icon: null,
+    width: 470,
+    closable: true,
+    title: createElement(
+      "div",
+      { style: { fontSize: 13, fontWeight: 600, marginBottom: 8 } },
+      "关闭标签页",
+    ),
+    content: createElement(
+      "div",
+      { style: { fontSize: 12, lineHeight: 1.6 } },
+      createElement("strong", null, tab.name),
+      " 有未保存的修改，保存修改以免丢失工作内容。",
+    ),
     footer: createElement(
-      Space,
-      { style: { display: "flex", justifyContent: "flex-end" } },
-      createElement(Button, { onClick: () => modal.destroy() }, "取消"),
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          marginTop: 24,
+        },
+      },
       createElement(
         Button,
         {
-          danger: true,
+          style: btnStyle,
           onClick: () => {
             modal.destroy();
             closeTab(key);
@@ -109,15 +132,25 @@ export function confirmCloseTab(key: string) {
         "直接关闭",
       ),
       createElement(
-        Button,
-        {
-          type: "primary",
-          onClick: () => {
-            modal.destroy();
-            saveAndClose();
+        Space,
+        { size: 8 },
+        createElement(
+          Button,
+          { style: btnStyle, onClick: () => modal.destroy() },
+          "取消",
+        ),
+        createElement(
+          Button,
+          {
+            type: "primary",
+            style: btnStyle,
+            onClick: () => {
+              modal.destroy();
+              saveAndClose();
+            },
           },
-        },
-        "保存并关闭",
+          "保存并关闭",
+        ),
       ),
     ),
   });

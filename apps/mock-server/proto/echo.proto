@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package rabbitpost.test.echo;
+
+// 仅供 apps/runner gRPC 客户端测试使用的 echo 服务（覆盖四种调用形态）
+service Echo {
+  rpc Unary(EchoRequest) returns (EchoResponse);
+  rpc ServerStream(EchoRequest) returns (stream EchoResponse);
+  rpc ClientStream(stream EchoRequest) returns (EchoResponse);
+  rpc Bidi(stream EchoRequest) returns (stream EchoResponse);
+}
+
+message EchoRequest {
+  string text = 1;
+  int32 count = 2;
+  Nested nested = 3;
+}
+
+message Nested {
+  string label = 1;
+}
+
+message EchoResponse {
+  string text = 1;
+  int32 seq = 2;
+}

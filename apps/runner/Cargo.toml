@@ -12,21 +12,61 @@ path = "src/main.rs"
 [dependencies]
 rp-core = { path = "../../crates/rp-core" }
 anyhow = "1"
+axum = "0.8"
+base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive", "env"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls",
+    "stream",
+] }
+rumqttc = { version = "0.24", default-features = false, features = ["use-rustls"] }
+rustls-native-certs = "0.7"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
+    "net",
     "sync",
     "time",
     "signal",
 ] }
+tokio-tungstenite = { version = "0.26", default-features = false, features = [
+    "connect",
+    "handshake",
+    "rustls-tls-native-roots",
+] }
+
+prost = "0.14"
+prost-reflect = { version = "0.16", features = ["serde"] }
+prost-types = "0.14"
+protox = "0.9"
+rmcp = { version = "3", default-features = false, features = [
+    "client",
+    "transport-streamable-http-client-reqwest",
+    "reqwest",
+] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tonic = { version = "0.14", features = ["transport", "tls-ring", "tls-native-roots"] }
+tonic-prost = "0.14"
+tonic-reflection = "0.14"
+tower-http = { version = "0.6", features = ["cors"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[build-dependencies]
+prost = "0.14"
+protox = "0.9"
+tonic-prost-build = "0.14"
 
 [dev-dependencies]
 assert_cmd = "2"
+tokio = { version = "1", features = ["process", "io-util"] }
 predicates = "3"
 serde_json = "1"
+tokio-stream = { version = "0.1", features = ["net"] }
 wiremock = "0.6"
 
 [profile.release]

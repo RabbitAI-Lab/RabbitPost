@@ -1,0 +1,121 @@
+name: desktop-release
+
+# 构建 RabbitPost 桌面客户端（Tauri 壳，加载远程 Web）：
+# - PR：仅三平台构建验证（不发布）
+# - 推送 desktop-v* tag：产出带版本号的 Release，附各平台安装包
+# - 手动 dispatch：同 tag 发布流程（产出 desktop-latest 滚动 Release）
+on:
+  workflow_dispatch:
+  push:
+    tags: ["desktop-v*"]
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - ".github/workflows/desktop-release.yml"
+
+permissions:
+  contents: write
+
+# 同一 ref 上排队执行，避免并发刷新滚动 Release 互相覆盖
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-14
+          - name: linux-x64
+            os: ubuntu-22.04
+          - name: windows-x64
+            os: windows-2022
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/desktop/src-tauri
+            apps/runner
+          shared-key: desktop-release
+          key: ${{ matrix.name }}
+
+      # Linux 下 Tauri 依赖 webkit2gtk 等系统库
+      - name: install linux system deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: install node deps
+        run: pnpm install --frozen-lockfile
+
+      - name: build
+        run: pnpm nx build @rabbitpost/desktop
+
+      - name: package
+        shell: bash
+        run: |
+          mkdir -p dist
+          bundle="apps/desktop/src-tauri/target/release/bundle"
+          cp "$bundle"/dmg/*.dmg dist/ 2>/dev/null || true
+          cp "$bundle"/macos/*.app.tar.gz dist/ 2>/dev/null || true
+          cp "$bundle"/deb/*.deb dist/ 2>/dev/null || true
+          cp "$bundle"/appimage/*.AppImage dist/ 2>/dev/null || true
+          cp "$bundle"/msi/*.msi dist/ 2>/dev/null || true
+          cp "$bundle"/nsis/*.exe dist/ 2>/dev/null || true
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.name }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    # PR 只做构建验证，不发布；tag 与手动 dispatch 才发布
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
+
+      # 推送 desktop-v* tag：带版本号的存档 Release
+      - name: publish versioned release (tag builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: RabbitPost Desktop ${{ env.RELEASE_TAG }}
+          prerelease: false
+          files: dist/**
+
+      # 手动 dispatch：刷新 desktop-latest 滚动 Release
+      - name: update rolling release (desktop-latest)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-latest
+          name: RabbitPost Desktop (latest)
+          prerelease: false
+          files: dist/**

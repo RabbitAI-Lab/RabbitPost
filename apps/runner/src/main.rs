@@ -26,6 +26,9 @@ macro_rules! logln {
     };
 }
 
+mod agent;
+mod rt;
+
 /// 单批上报的结果条数上限（与服务端 results 接口的上限一致）
 const REPORT_BATCH: usize = 20;
 /// 攒批等待时间：让 UI 能较快看到进度，又不至于每条一次请求
@@ -82,12 +85,24 @@ struct RunArgs {
     concurrency: usize,
 }
 
+#[derive(Args)]
+struct LocalAgentArgs {
+    /// 监听起始端口（127.0.0.1）；被占时递增探测，最多 +10
+    #[arg(long, default_value_t = 17337)]
+    port: u16,
+    /// 额外放行的 Origin（逗号分隔，可重复）；默认已放行 localhost/127.0.0.1/tauri
+    #[arg(long = "allow-origin", env = "RABBITPOST_AGENT_ALLOW_ORIGIN", value_delimiter = ',')]
+    allow_origin: Vec<String>,
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// 常驻运行，领取并执行服务端派发的任务
     Serve(ServeArgs),
     /// 在本机执行一次指定的 Collection 或请求
     Run(RunArgs),
+    /// 作为桌面客户端的本地执行代理运行（不注册、不连接服务器）
+    LocalAgent(LocalAgentArgs),
 }
 
 #[tokio::main]
@@ -107,6 +122,13 @@ async fn main() -> ExitCode {
             Ok(false) => ExitCode::from(1),
             Err(e) => {
                 eprintln!("run failed: {e:#}");
+                ExitCode::from(2)
+            }
+        },
+        Command::LocalAgent(args) => match agent::serve(args.port, args.allow_origin).await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("local-agent exited with error: {e:#}");
                 ExitCode::from(2)
             }
         },
@@ -155,8 +177,12 @@ async fn serve(args: ServeArgs) -> anyhow::Result<()> {
         }
     };
 
+    // 实时通道：与轮询循环并行保持 rt downlink 长连接（断线内部退避重连）
+    let rt_link = tokio::spawn(rt::rt_link_loop(client.clone()));
+
     tokio::select! {
         _ = work => {}
+        _ = rt_link => {}
         signal = tokio::signal::ctrl_c() => {
             signal?;
             logln!("interrupted, shutting down");

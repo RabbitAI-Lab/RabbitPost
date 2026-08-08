@@ -259,33 +259,45 @@ input.ant-input.code-font {
    .cm-theme-light/dark 包裹层没有高度；整条链（包裹层→editor→scroller）都须
    显式钉死，否则编辑器展开为全内容高度被外层 overflow:hidden 裁剪，无法滚动 */
 .spec-cm [class^="cm-theme"],
-.response-cm [class^="cm-theme"] {
+.response-cm [class^="cm-theme"],
+.gql-cm [class^="cm-theme"] {
   height: 100%;
 }
 .spec-cm .cm-editor,
-.response-cm .cm-editor {
+.response-cm .cm-editor,
+.gql-cm .cm-editor {
   height: 100%;
 }
 .spec-cm .cm-scroller,
-.response-cm .cm-scroller {
+.response-cm .cm-scroller,
+.gql-cm .cm-scroller {
   height: 100%;
   overflow: auto;
 }
 .spec-cm .cm-scroller,
-.response-cm .cm-scroller {
+.response-cm .cm-scroller,
+.gql-cm .cm-scroller {
   font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
   font-size: 12px;
   overflow: auto;
 }
 .spec-cm .cm-editor.cm-focused,
-.response-cm .cm-editor.cm-focused {
+.response-cm .cm-editor.cm-focused,
+.gql-cm .cm-editor.cm-focused {
   outline: none;
 }
 
 /* Response Body：让所在 tab 面板撑满高度，使内部 CodeMirror 能独立滚动。
    仅作用于包含 .response-body-root 的面板，不影响 Cookies/Headers 等表格面板。
    pane-tabs 仅设了 body/content 的 height:100%，tabpane 本身无高度导致链断裂。 */
-.pane-tabs .ant-tabs-tabpane:has(> .response-body-root) {
+.pane-tabs .ant-tabs-tabpane:has(> .response-body-root),
+.pane-tabs .ant-tabs-tabpane:has(> .gql-cm) {
+  height: 100%;
+}
+
+/* GraphQL 底部 Response / Subscription 双 tab：pane 撑满高度（Response 内嵌完整 Tabs、
+   Subscription 为滚动日志，均依赖 pane 有确定高度） */
+.gql-bottom-tabs .ant-tabs-tabpane {
   height: 100%;
 }
 

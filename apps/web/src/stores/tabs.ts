@@ -10,11 +10,13 @@ import type {
   KeyValueItem,
   RequestCase,
   RequestConfig,
+  RequestProtocol,
   Spec,
   SpecFormat,
   SpecType,
 } from "@rabbitpost/shared";
 import { createEmptyRequestConfig } from "@rabbitpost/shared";
+import { createRequestConfigForProtocol } from "../lib/protocols";
 import { create } from "zustand";
 
 export interface RequestTab {
@@ -182,7 +184,7 @@ interface TabsState {
   activeKey: string | null;
 
   /** 新建草稿；method 缺省为 GET，可传入以继承上一个 tab 的请求方法 */
-  openDraft: (method?: HttpMethod) => void;
+  openDraft: (method?: HttpMethod, protocol?: RequestProtocol) => void;
   openFromItem: (item: CollectionItem) => void;
   /** 打开接口用例编辑 tab（复用 RequestEditor；同一用例复用同一 tab） */
   openCase: (item: Pick<CollectionItem, "id" | "collectionId">, caseRow: RequestCase) => void;
@@ -250,9 +252,12 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   onScenarioStepSaved: null,
   setOnScenarioStepSaved: (cb) => set({ onScenarioStepSaved: cb }),
 
-  openDraft: (method) => {
+  openDraft: (method, protocol) => {
     const key = `draft-${draftSeq++}`;
-    const config = createEmptyRequestConfig();
+    // 指定协议时按协议生成初始配置（含 GraphQL 的 POST + body 联动）；否则空 HTTP 配置
+    const config = protocol
+      ? createRequestConfigForProtocol(protocol)
+      : createEmptyRequestConfig();
     if (method) config.method = method;
     const tab: RequestTab = {
       kind: "request",

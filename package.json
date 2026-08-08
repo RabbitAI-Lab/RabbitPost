@@ -13,6 +13,8 @@
     "dev:api": "node scripts/ensure-ports.mjs 4000 && nx dev @rabbitpost/api",
     "dev:free-ports": "node scripts/ensure-ports.mjs",
     "dev:docs": "nx dev @rabbitpost/docs",
+    "dev:desktop": "nx run-many -t dev --projects=@rabbitpost/web,@rabbitpost/desktop --parallel",
+    "desktop:build": "nx build @rabbitpost/desktop",
     "build": "nx run-many -t build --all",
     "typecheck": "nx run-many -t typecheck --all",
     "runner:build": "nx build-runner @rabbitpost/runner",

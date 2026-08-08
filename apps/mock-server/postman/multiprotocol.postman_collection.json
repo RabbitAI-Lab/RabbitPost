@@ -1,0 +1,218 @@
+{
+  "info": {
+    "name": "RabbitPost 多协议 E2E（Mock Server）",
+    "description": "多协议交叉验证 collection：GraphQL（真实服务）/ SSE / HTTP 冒烟。配套环境 multiprotocol.postman_environment.json（baseUrl=http://localhost:3090）。长连接协议（WS/Socket.IO/MQTT/gRPC/MCP）不在 collection 格式内，按 docs/multi-protocol-e2e.md 手工验证。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status is ok', () => pm.expect(pm.response.json().status).to.equal('ok'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "HTTP 冒烟",
+      "item": [
+        {
+          "name": "GET Echo with Params",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/get?foo=bar&num=42",
+              "host": ["{{baseUrl}}"],
+              "path": ["get"],
+              "query": [
+                { "key": "foo", "value": "bar" },
+                { "key": "num", "value": "42" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('args echoed', () => pm.expect(pm.response.json().args.foo).to.equal('bar'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Echo with JSON",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/post",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\": \"rabbit\", \"tags\": [\"a\", \"b\"]}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('json echoed', () => pm.expect(pm.response.json().json.name).to.equal('rabbit'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "GraphQL",
+      "item": [
+        {
+          "name": "Hello Query（带变量）",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Hello($name: String) {\n  hello(name: $name)\n}",
+                "variables": "{\n  \"name\": \"Postman\"\n}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('hello resolved', () => pm.expect(pm.response.json().data.hello).to.equal('Hello, Postman!'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "User Query",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query {\n  user(id: \"1\") {\n    id\n    name\n    email\n  }\n}",
+                "variables": "{}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('user id echoed', () => pm.expect(pm.response.json().data.user.id).to.equal('1'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Echo Mutation",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation {\n  echo(text: \"hi\")\n}",
+                "variables": "{}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('mutation echoed', () => pm.expect(pm.response.json().data.echo).to.equal('hi'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Introspection Probe",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{\n  __schema {\n    queryType { name }\n    mutationType { name }\n  }\n}",
+                "variables": "{}"
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('queryType is Query', () => pm.expect(pm.response.json().data.__schema.queryType.name).to.equal('Query'));",
+                  "pm.test('mutationType is Mutation', () => pm.expect(pm.response.json().data.__schema.mutationType.name).to.equal('Mutation'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SSE",
+      "item": [
+        {
+          "name": "Finite Stream（3 条后结束）",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/sse/finite",
+            "header": [{ "key": "Accept", "value": "text/event-stream" }]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('body contains sse frames', () => pm.expect(pm.response.text().includes('data:')).to.equal(true));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

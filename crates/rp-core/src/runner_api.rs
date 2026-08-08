@@ -40,6 +40,39 @@ struct CompleteBody {
     error: Option<String>,
 }
 
+// ---------------------------------------------------------------------------
+// 实时通道（rt）：api → runner 的 downlink 指令与 runner → api 的事件上行
+// ---------------------------------------------------------------------------
+
+/// api 经 downlink（NDJSON 流）下发的单条指令
+#[derive(Debug, Deserialize)]
+#[serde(tag = "cmd", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum RtCommand {
+    Start {
+        session_id: String,
+        protocol: String,
+        url: String,
+        #[serde(default)]
+        config: Option<serde_json::Value>,
+    },
+    Send {
+        session_id: String,
+        data: String,
+        #[serde(default)]
+        encoding: Option<String>,
+    },
+    Close {
+        session_id: String,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RtEventBody<'a> {
+    session_id: &'a str,
+    event: &'a serde_json::Value,
+}
+
 pub struct RunnerApi {
     client: HttpClient,
 }
@@ -121,6 +154,31 @@ impl RunnerApi {
                 &CompleteBody {
                     status: if succeeded { "succeeded" } else { "failed" },
                     error,
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// 打开 rt downlink 长连接（GET 流式 NDJSON）；返回未消费的响应，调用方逐行读取。
+    /// 连接断开（Ok 流结束或 Err）后由调用方退避重连，api 会重建会话。
+    pub async fn open_rt_link(&self) -> anyhow::Result<reqwest::Response> {
+        self.client.get_stream("/api/v1/runner/rt/link").await
+    }
+
+    /// 上报一条 session 事件（ServerMessage 形状的 JSON），api 写入对应 SSE 队列
+    pub async fn post_rt_event(
+        &self,
+        session_id: &str,
+        event: &serde_json::Value,
+    ) -> anyhow::Result<()> {
+        let _: serde_json::Value = self
+            .client
+            .post(
+                "/api/v1/runner/rt/event",
+                &RtEventBody {
+                    session_id,
+                    event,
                 },
             )
             .await?;

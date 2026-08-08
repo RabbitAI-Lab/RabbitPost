@@ -724,6 +724,170 @@ const collection = {
         },
       ],
     },
+    {
+      name: 'SSE & GraphQL & MCP',
+      item: [
+        {
+          name: 'SSE Finite (3 events then end)',
+          request: { method: 'GET', url: '{{baseUrl}}/sse/finite' },
+          event: [
+            {
+              listen: 'test',
+              script: {
+                exec: [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type is SSE', () => {",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/event-stream');",
+                  '});',
+                  "pm.test('Has custom done event', () => {",
+                  "  pm.expect(pm.response.text()).to.include('event: done');",
+                  '});',
+                  "pm.test('Has multi-line data', () => {",
+                  "  pm.expect(pm.response.text()).to.include('data: multi line 1');",
+                  '});',
+                ],
+              },
+            },
+          ],
+        },
+        {
+          name: 'SSE Stream (1/s, client stops)',
+          request: { method: 'GET', url: '{{baseUrl}}/sse/stream' },
+          event: [
+            {
+              listen: 'test',
+              script: {
+                exec: [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type is SSE', () => {",
+                  "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/event-stream');",
+                  '});',
+                ],
+              },
+            },
+          ],
+        },
+        {
+          name: 'GraphQL hello Query',
+          request: {
+            method: 'POST',
+            url: '{{baseUrl}}/graphql',
+            header: [{ key: 'Content-Type', value: 'application/json' }],
+            body: {
+              mode: 'raw',
+              raw: JSON.stringify({ query: '{ hello(name: "Postman") }' }),
+            },
+          },
+          event: [
+            {
+              listen: 'test',
+              script: {
+                exec: [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Hello returned', () => {",
+                  "  pm.expect(pm.response.json().data.hello).to.equal('Hello, Postman!');",
+                  '});',
+                ],
+              },
+            },
+          ],
+        },
+        {
+          name: 'GraphQL echo Mutation',
+          request: {
+            method: 'POST',
+            url: '{{baseUrl}}/graphql',
+            header: [{ key: 'Content-Type', value: 'application/json' }],
+            body: {
+              mode: 'raw',
+              raw: JSON.stringify({
+                query: 'mutation($text: String!) { echo(text: $text) }',
+                variables: { text: 'ping' },
+              }),
+            },
+          },
+          event: [
+            {
+              listen: 'test',
+              script: {
+                exec: [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Echo returned', () => {",
+                  "  pm.expect(pm.response.json().data.echo).to.equal('ping');",
+                  '});',
+                ],
+              },
+            },
+          ],
+        },
+        {
+          name: 'GraphQL Introspection',
+          request: {
+            method: 'POST',
+            url: '{{baseUrl}}/graphql',
+            header: [{ key: 'Content-Type', value: 'application/json' }],
+            body: {
+              mode: 'raw',
+              raw: JSON.stringify({
+                query: '{ __schema { queryType { name } mutationType { name } subscriptionType { name } } }',
+              }),
+            },
+          },
+          event: [
+            {
+              listen: 'test',
+              script: {
+                exec: [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Introspection on', () => {",
+                  '  const s = pm.response.json().data.__schema;',
+                  "  pm.expect(s.queryType.name).to.equal('Query');",
+                  "  pm.expect(s.subscriptionType.name).to.equal('Subscription');",
+                  '});',
+                ],
+              },
+            },
+          ],
+        },
+        {
+          name: 'MCP initialize',
+          request: {
+            method: 'POST',
+            url: '{{baseUrl}}/mcp',
+            header: [
+              { key: 'Content-Type', value: 'application/json' },
+              { key: 'Accept', value: 'application/json, text/event-stream' },
+            ],
+            body: {
+              mode: 'raw',
+              raw: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 1,
+                method: 'initialize',
+                params: {
+                  protocolVersion: '2025-03-26',
+                  capabilities: {},
+                  clientInfo: { name: 'postman', version: '0.0.0' },
+                },
+              }),
+            },
+          },
+          event: [
+            {
+              listen: 'test',
+              script: {
+                exec: [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has serverInfo', () => {",
+                  "  pm.expect(pm.response.text()).to.include('rabbitpost-mock-mcp');",
+                  '});',
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    },
   ],
   variable: [
     {

@@ -17,8 +17,12 @@ import { App, Button, Dropdown, Empty, Input, Modal, Typography } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Tree } from "react-arborist";
 import type { NodeApi, NodeRendererProps, TreeApi } from "react-arborist";
-import type { Collection, CollectionItem } from "@rabbitpost/shared";
+import type { Collection, CollectionItem, RequestProtocol } from "@rabbitpost/shared";
 import { collectionsApi } from "../../api";
+import {
+  createRequestConfigForProtocol,
+  NEW_REQUEST_PROTOCOLS,
+} from "../../lib/protocols";
 import { useContainerSize } from "../../lib/use-container-size";
 import { useAppStore } from "../../stores/app";
 import { useTabsStore } from "../../stores/tabs";
@@ -36,19 +40,40 @@ const METHOD_COLORS: Record<string, string> = {
   OPTIONS: "#6b6b6b",
 };
 
-function MethodTag({ method }: { method?: string }) {
-  if (!method) return null;
+/** 非 HTTP 协议在树中的标签（文字 + 颜色），与 RequestTitleBar 的 PROTOCOL_META 对应 */
+const PROTOCOL_TAGS: Record<string, { label: string; color: string }> = {
+  graphql: { label: "GQL", color: "#e10098" },
+  ai: { label: "AI", color: "#722ed1" },
+  mcp: { label: "MCP", color: "#1677ff" },
+  grpc: { label: "GRPC", color: "#2f9e44" },
+  websocket: { label: "WS", color: "#faad14" },
+  socketio: { label: "SIO", color: "#13c2c2" },
+  mqtt: { label: "MQTT", color: "#660066" },
+  sse: { label: "SSE", color: "#eb2f96" },
+};
+
+function MethodTag({
+  method,
+  protocol,
+}: {
+  method?: string;
+  /** 非 http 协议时优先显示协议标签而非 HTTP 方法 */
+  protocol?: string;
+}) {
+  const p = protocol && protocol !== "http" ? PROTOCOL_TAGS[protocol] : undefined;
+  const label = p?.label ?? method;
+  if (!label) return null;
   return (
     <span
       style={{
-        color: METHOD_COLORS[method] ?? "#6b6b6b",
+        color: p?.color ?? METHOD_COLORS[label] ?? "#6b6b6b",
         fontWeight: 600,
         fontSize: 8,
         marginRight: 5,
         flexShrink: 0,
       }}
     >
-      {method}
+      {label}
     </span>
   );
 }
@@ -184,6 +209,38 @@ export default function CollectionsPanel({
     setPendingSelectId(created.id);
   };
 
+  /** 新建指定协议的请求：创建后立即写入协议配置（协议保存后不可修改） */
+  const handleAddRequest = async (
+    collectionId: string,
+    parentId: string | null,
+    protocol: RequestProtocol,
+  ) => {
+    const created = await collectionsApi.createItem(collectionId, {
+      parentId,
+      type: "request",
+      name: "New Request",
+    });
+    if (protocol !== "http") {
+      await collectionsApi.updateItem(created.id, {
+        request: createRequestConfigForProtocol(protocol),
+      });
+    }
+    await refreshCollectionTree(collectionId);
+    setPendingSelectId(created.id);
+  };
+
+  /** 「新建请求」协议子菜单（Collection / 文件夹右键菜单与 hover + 共用） */
+  const addRequestSubMenu = (collectionId: string, parentId: string | null) => ({
+    key: "add-request",
+    icon: <FileAddOutlined />,
+    label: "新建请求",
+    children: NEW_REQUEST_PROTOCOLS.map((p) => ({
+      key: `add-request-${p.value}`,
+      label: p.label,
+      onClick: () => void handleAddRequest(collectionId, parentId, p.value),
+    })),
+  });
+
   const handleRename = async (item: CollectionItem) => {
     let name = item.name;
     Modal.confirm({
@@ -262,12 +319,7 @@ export default function CollectionsPanel({
         // 普通目录：新建请求 + 新建子文件夹
         ...(item.type === "folder" && !isScenarioRootFolder && !inScenario
           ? [
-              {
-                key: "add-request",
-                icon: <FileAddOutlined />,
-                label: "新建请求",
-                onClick: () => void handleAddItem(item.collectionId, item.id, "request"),
-              },
+              addRequestSubMenu(item.collectionId, item.id),
               {
                 key: "add-folder",
                 icon: <FolderAddOutlined />,
@@ -300,12 +352,7 @@ export default function CollectionsPanel({
 
   const collectionMenu = (col: Collection) => ({
     items: [
-      {
-        key: "add-request",
-        icon: <FileAddOutlined />,
-        label: "新建请求",
-        onClick: () => void handleAddItem(col.id, null, "request"),
-      },
+      addRequestSubMenu(col.id, null),
       {
         key: "add-folder",
         icon: <FolderAddOutlined />,
@@ -397,7 +444,12 @@ export default function CollectionsPanel({
             style={{ fontSize: 15, color: "#722ed1", marginRight: 5, flexShrink: 0 }}
           />
         )}
-        {data.kind === "request" && <MethodTag method={data.item?.request?.method} />}
+        {data.kind === "request" && (
+          <MethodTag
+            method={data.item?.request?.method}
+            protocol={data.item?.request?.protocol}
+          />
+        )}
         <Typography.Text ellipsis style={{ fontSize: 12, flex: 1, color: "#6b6b6b" }}>
           {data.name}
         </Typography.Text>
@@ -415,20 +467,29 @@ export default function CollectionsPanel({
             }}
           />
         )}
-        {/* Collection 新建请求：hover 显 + */}
+        {/* Collection 新建请求：hover 显 +，点击弹出协议选择 */}
         {data.kind === "collection" && data.collection && (
-          <Button
-            className="tree-plus-btn"
-            type="text"
-            size="small"
-            title="新建请求"
-            icon={<PlusOutlined />}
-            onClick={(e) => {
-              // 避免冒泡到行 onClick 误触打开详情/折叠
-              e.stopPropagation();
-              void handleAddItem(data.collection!.id, null, "request");
-            }}
-          />
+          <span onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+            <Dropdown
+              trigger={["click"]}
+              menu={{
+                items: NEW_REQUEST_PROTOCOLS.map((p) => ({
+                  key: p.value,
+                  label: p.label,
+                })),
+                onClick: ({ key }) =>
+                  void handleAddRequest(data.collection!.id, null, key as RequestProtocol),
+              }}
+            >
+              <Button
+                className="tree-plus-btn"
+                type="text"
+                size="small"
+                title="新建请求"
+                icon={<PlusOutlined />}
+              />
+            </Dropdown>
+          </span>
         )}
         {/* Collection 收藏：hover 显星，已收藏常驻金色实心星并置顶 */}
         {data.kind === "collection" && data.collection && (

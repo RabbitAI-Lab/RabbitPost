@@ -550,7 +550,7 @@ fn md5_final(ctx: &mut Md5Context) -> [u8; 16] {
     // Padding
     let pad_len = if buffer_len < 56 { 56 - buffer_len } else { 120 - buffer_len };
     let mut padding = vec![0x80u8];
-    padding.extend(std::iter::repeat(0u8).take(pad_len - 1));
+    padding.extend(std::iter::repeat_n(0u8, pad_len - 1));
     md5_update(ctx, &padding);
 
     // Length

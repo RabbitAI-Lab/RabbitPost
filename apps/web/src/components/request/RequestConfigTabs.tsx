@@ -259,7 +259,8 @@ function BulkKvSection({
  * Headers tab 专用：自动生成的头作为置灰只读行显示在列表末尾，
  * 标题行左侧眼睛图标切换显隐。用户已手动设置的同名头不重复展示（同 Postman）。
  */
-function HeadersSection({
+/** 供 GraphQL 等非 HTTP 协议编辑器复用（export），HTTP 的 RequestConfigTabs 内部同样使用 */
+export function HeadersSection({
   tab,
   onChange,
 }: {

@@ -15,6 +15,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "multipart",
     "charset",
     "http2",
+    "stream",
 ] }
 rquickjs = "0.9"
 serde = { version = "1", features = ["derive"] }

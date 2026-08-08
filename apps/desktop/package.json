@@ -1,0 +1,14 @@
+{
+  "name": "@rabbitpost/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sidecar": "node scripts/prepare-sidecar.mjs",
+    "dev": "node scripts/prepare-sidecar.mjs && tauri dev",
+    "build": "node scripts/prepare-sidecar.mjs && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

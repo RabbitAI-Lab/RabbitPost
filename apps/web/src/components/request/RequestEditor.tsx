@@ -24,6 +24,13 @@ import { useAppStore } from "../../stores/app";
 import { useCasesStore } from "../../stores/cases";
 import { isTabDirty, useTabsStore, type RequestTab } from "../../stores/tabs";
 import VarInput from "../common/variable/VarInput";
+import GraphQLEditor from "./protocols/GraphQLEditor";
+import GrpcEditor from "./protocols/GrpcEditor";
+import McpEditor from "./protocols/McpEditor";
+import MqttEditor from "./protocols/MqttEditor";
+import SocketIOEditor from "./protocols/SocketIOEditor";
+import SseEditor from "./protocols/SseEditor";
+import WebSocketEditor from "./protocols/WebSocketEditor";
 import RequestConfigTabs from "./RequestConfigTabs";
 import RequestTitleBar from "./RequestTitleBar";
 import ResponseViewer from "./ResponseViewer";
@@ -242,42 +249,60 @@ export default function RequestEditor({ tab }: Props) {
         }
       />
 
-      {/* 方法 + URL + 发送：各自独立分开，保留四个圆角 */}
-      <div style={{ display: "flex", gap: 8, width: "100%", marginBottom: 8 }}>
-        <Select
-          value={tab.config.method}
-          style={{ width: 110, flexShrink: 0 }}
-          options={HTTP_METHODS.map((m) => ({ value: m, label: m }))}
-          onChange={(method) => patch(tab.key, { method })}
-        />
-        <VarInput
-          className="code-font"
-          style={{ flex: 1, minWidth: 0 }}
-          placeholder="https://api.example.com/users/{{userId}}"
-          value={tab.config.url}
-          onChange={(url) => patch(tab.key, { url })}
-          onEnter={() => void handleSend()}
-        />
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          loading={tab.sending}
-          style={{ flexShrink: 0 }}
-          onClick={() => void handleSend()}
-        >
-          Send
-        </Button>
-      </div>
+      {/* 方法 + URL + 发送：各自独立分开，保留四个圆角；非 HTTP 协议走专属编辑器 */}
+      {(tab.config.protocol ?? "http") === "graphql" ? (
+        <GraphQLEditor tab={tab} onSend={() => void handleSend()} />
+      ) : (tab.config.protocol ?? "http") === "websocket" ? (
+        <WebSocketEditor tab={tab} />
+      ) : (tab.config.protocol ?? "http") === "socketio" ? (
+        <SocketIOEditor tab={tab} />
+      ) : (tab.config.protocol ?? "http") === "mqtt" ? (
+        <MqttEditor tab={tab} />
+      ) : (tab.config.protocol ?? "http") === "mcp" ? (
+        <McpEditor tab={tab} />
+      ) : (tab.config.protocol ?? "http") === "grpc" ? (
+        <GrpcEditor tab={tab} />
+      ) : (tab.config.protocol ?? "http") === "sse" ? (
+        <SseEditor tab={tab} />
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: 8, width: "100%", marginBottom: 8 }}>
+            <Select
+              value={tab.config.method}
+              style={{ width: 110, flexShrink: 0 }}
+              options={HTTP_METHODS.map((m) => ({ value: m, label: m }))}
+              onChange={(method) => patch(tab.key, { method })}
+            />
+            <VarInput
+              className="code-font"
+              style={{ flex: 1, minWidth: 0 }}
+              placeholder="https://api.example.com/users/{{userId}}"
+              value={tab.config.url}
+              onChange={(url) => patch(tab.key, { url })}
+              onEnter={() => void handleSend()}
+            />
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              loading={tab.sending}
+              style={{ flexShrink: 0 }}
+              onClick={() => void handleSend()}
+            >
+              Send
+            </Button>
+          </div>
 
-      {/* 请求 / 响应分栏：拖拽分割线调整两区高度 */}
-      <Splitter layout="vertical" style={{ flex: 1, minHeight: 0 }}>
-        <Splitter.Panel defaultSize="55%" min="15%" style={{ paddingBottom: 4 }}>
-          <RequestConfigTabs tab={tab} />
-        </Splitter.Panel>
-        <Splitter.Panel min="15%" style={{ paddingTop: 4 }}>
-          <ResponseViewer response={tab.response} sending={tab.sending} />
-        </Splitter.Panel>
-      </Splitter>
+          {/* 请求 / 响应分栏：拖拽分割线调整两区高度 */}
+          <Splitter layout="vertical" style={{ flex: 1, minHeight: 0 }}>
+            <Splitter.Panel defaultSize="55%" min="15%" style={{ paddingBottom: 4 }}>
+              <RequestConfigTabs tab={tab} />
+            </Splitter.Panel>
+            <Splitter.Panel min="15%" style={{ paddingTop: 4 }}>
+              <ResponseViewer response={tab.response} sending={tab.sending} />
+            </Splitter.Panel>
+          </Splitter>
+        </>
+      )}
 
       {/* 保存草稿 / 另存为新条目 */}
       <Modal

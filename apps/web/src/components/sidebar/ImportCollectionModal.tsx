@@ -57,6 +57,7 @@ interface PmRequest {
     options?: { raw?: { language?: string } };
     urlencoded?: PmKv[];
     formdata?: PmKv[];
+    graphql?: { query?: string; variables?: string };
   };
   auth?: { type?: string } & Record<string, PmKv[] | string | undefined>;
 }
@@ -297,6 +298,13 @@ function convertBody(body: PmRequest["body"]): RequestBody {
       return { type: "x-www-form-urlencoded", urlencoded: toKv(body.urlencoded) };
     case "formdata":
       return { type: "form-data", formData: toKv(body.formdata) };
+    case "graphql":
+      // Postman GraphQL 请求：body.mode = graphql，query/variables 独立字段
+      return {
+        type: "graphql",
+        graphqlQuery: body.graphql?.query ?? "",
+        graphqlVariables: body.graphql?.variables ?? "",
+      };
     default:
       return { type: "none", rawLanguage: "json" };
   }
@@ -346,19 +354,24 @@ function convertRequest(req: PmRequest, events: PmItem["event"]): RequestConfig 
     params = toKv(req.url.query);
   }
 
+  const body = convertBody(req.body);
   return {
-    method,
+    // GraphQL body 的请求按 GraphQL 协议导入（固定 POST），其余默认 HTTP
+    ...(body.type === "graphql"
+      ? { protocol: "graphql" as const, method: "POST" as const }
+      : { method }),
     url,
     params,
     headers: toKv(req.header),
-    body: convertBody(req.body),
+    body,
     auth: convertAuth(req.auth),
     scripts: convertScripts(events),
   };
 }
 
 /** Postman item 树 -> RabbitPost 节点树 */
-function pmToNodes(items: PmItem[]): RpCollectionNode[] {
+/** 导出供测试直接验证转换结果 */
+export function pmToNodes(items: PmItem[]): RpCollectionNode[] {
   const nodes: RpCollectionNode[] = [];
   for (const it of items) {
     if (Array.isArray(it.item)) {

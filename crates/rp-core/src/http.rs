@@ -50,6 +50,8 @@ pub(crate) fn parse_envelope<T: DeserializeOwned>(
 /// Bearer Token 认证的 API 客户端；Runner Token 与个人 API Key 通用
 pub struct HttpClient {
     http: reqwest::Client,
+    /// 长连接流式请求专用：不带整体超时（普通请求的 60s 超时会杀死常驻流）
+    stream_http: reqwest::Client,
     base: String,
     token: String,
 }
@@ -60,8 +62,12 @@ impl HttpClient {
             .timeout(Duration::from_secs(60))
             .user_agent(user_agent.to_string())
             .build()?;
+        let stream_http = reqwest::Client::builder()
+            .user_agent(user_agent.to_string())
+            .build()?;
         Ok(Self {
             http,
+            stream_http,
             base: server.trim_end_matches('/').to_string(),
             token: token.to_string(),
         })
@@ -112,6 +118,30 @@ impl HttpClient {
         let url = format!("{}{}", self.base, path);
         let req = self.http.delete(&url).bearer_auth(&self.token);
         self.send(&url, req).await
+    }
+
+    /// 流式 GET：返回未消费的响应（调用方自行 bytes_stream 读流）。
+    /// 非 2xx 时读取错误信封并原文透传。
+    pub async fn get_stream(&self, path: &str) -> anyhow::Result<reqwest::Response> {
+        let url = format!("{}{}", self.base, path);
+        let resp = self
+            .stream_http
+            .get(&url)
+            .bearer_auth(&self.token)
+            .send()
+            .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await?;
+            // 尽力按错误信封解析，拿不到就把响应原文抛出
+            if let Ok(envelope) = serde_json::from_str::<Envelope<serde_json::Value>>(&text) {
+                if let Some(err) = envelope.error {
+                    anyhow::bail!("{} {}: {}", status, err.code, err.message);
+                }
+            }
+            anyhow::bail!("{url} returned {status}: {text}");
+        }
+        Ok(resp)
     }
 }
 

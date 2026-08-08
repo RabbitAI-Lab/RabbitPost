@@ -11,7 +11,7 @@ import {
 import { db } from "../../../../db";
 import { histories } from "../../../../db/schema";
 import { executeRequest } from "../../../../lib/executor";
-import { handleRoute, ok, requireWorkspaceRole } from "../../../../lib/http";
+import { handleRoute, HttpError, ok, requireWorkspaceRole } from "../../../../lib/http";
 import { dispatchAndWait } from "../../../../lib/runner-dispatch";
 import { hasAvailableRunner } from "../../../../lib/embedded-runner";
 
@@ -89,6 +89,15 @@ const inputSchema = z.object({
  */
 export const POST = handleRoute(async (req, _ctx, user) => {
   const input = inputSchema.parse(await req.json()) as ExecuteRequestInput & { itemId?: string };
+  // 长连接协议（websocket/socketio/mqtt/mcp/grpc）不能走一次性 HTTP 执行链路，应由前端经实时网关执行
+  const protocol = (input.request as { protocol?: string }).protocol ?? "http";
+  if (!["http", "graphql", "ai"].includes(protocol)) {
+    throw new HttpError(
+      400,
+      "UNSUPPORTED_PROTOCOL",
+      `协议 ${protocol} 是长连接协议，请通过实时网关（gateway）执行，而非一次性请求执行接口`,
+    );
+  }
   // viewer 也允许发送请求（与 Postman 一致，只读成员仍可调试）
   const { teamId } = await requireWorkspaceRole(input.workspaceId, user.id, "viewer");
 

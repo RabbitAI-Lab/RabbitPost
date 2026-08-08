@@ -9,6 +9,7 @@ import type {
   ExecuteRequestInput,
   ExecuteResult,
   HistoryEntry,
+  HistoryResponseSummary,
   RequestCase,
   RequestConfig,
   RunJob,
@@ -355,6 +356,20 @@ export const historyApi = {
     api<HistoryEntry[]>(`/api/v1/workspaces/${workspaceId}/history?limit=${limit}`),
   clear: (workspaceId: string) =>
     api(`/api/v1/workspaces/${workspaceId}/history`, { method: "DELETE" }),
+  /** 桌面端本地执行完成后上报一条历史（执行发生在本机 agent，服务器只负责落库） */
+  report: (
+    workspaceId: string,
+    input: {
+      name?: string | null;
+      request: RequestConfig;
+      response?: HistoryResponseSummary | null;
+      error?: string | null;
+    },
+  ) =>
+    api<HistoryEntry>(`/api/v1/workspaces/${workspaceId}/history`, {
+      method: "POST",
+      json: input,
+    }),
 };
 
 export const executeApi = {

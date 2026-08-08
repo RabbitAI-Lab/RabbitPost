@@ -40,6 +40,7 @@ export const REQUEST_PROTOCOLS = [
   "websocket",
   "socketio",
   "mqtt",
+  "sse",
 ] as const;
 export type RequestProtocol = (typeof REQUEST_PROTOCOLS)[number];
 
@@ -498,6 +499,84 @@ export function resolveRequestSettings(
   return resolved;
 }
 
+/** WebSocket 协议配置（握手头复用 headers，子协议存这里；连接状态与消息记录不持久化） */
+export interface WebSocketConfig {
+  /** Sec-WebSocket-Protocol 子协议，逗号分隔 */
+  protocols?: string;
+  /** 消息编辑器草稿 */
+  messageDraft?: string;
+  /** 消息编码：text 直接发送，base64 解码后按二进制发送 */
+  encoding?: "text" | "base64";
+}
+
+/** Socket.IO 协议配置（namespace 写在 URL 里） */
+export interface SocketIOConfig {
+  /** socket.io 端点路径，默认 /socket.io */
+  path?: string;
+  /** 握手 auth 负载（JSON 字符串） */
+  auth?: string;
+  /** 客户端版本（兼容老服务端），默认 v4 */
+  version?: "v2" | "v3" | "v4";
+  /** emit 事件名草稿 */
+  eventDraft?: string;
+  /** emit 参数草稿（JSON 值，作为单个 arg） */
+  payloadDraft?: string;
+}
+
+/** MQTT 协议配置 */
+export interface MqttConfig {
+  clientId?: string;
+  username?: string;
+  password?: string;
+  /** clean session，默认 true */
+  clean?: boolean;
+  /** 保活间隔（秒），默认 60 */
+  keepAlive?: number;
+  /** 遗嘱消息（Last Will）：异常断开时由 broker 发布 */
+  willTopic?: string;
+  willPayload?: string;
+  willQos?: 0 | 1 | 2;
+  willRetain?: boolean;
+  /** 已订阅列表（连接后按此订阅） */
+  subscriptions?: { topic: string; qos: 0 | 1 | 2 }[];
+  /** 发布编辑器草稿 */
+  publishTopicDraft?: string;
+  payloadDraft?: string;
+  qosDraft?: 0 | 1 | 2;
+  retainDraft?: boolean;
+}
+
+/** MCP 协议配置 */
+export interface McpConfig {
+  /** transport 选择：默认 auto（streamable-http 失败回退 sse） */
+  transport?: "auto" | "streamable-http" | "sse";
+  /** 当前选中的操作（tools/list、tools/call 等） */
+  operation?: string;
+  /** 操作参数草稿（JSON 字符串） */
+  paramsDraft?: string;
+}
+
+/** gRPC 协议配置 */
+export interface GrpcConfig {
+  /** 使用 TLS，默认 false（insecure） */
+  tls?: boolean;
+  /** 服务器不支持 reflection 时使用的 .proto 文本 */
+  protoText?: string;
+  /** 当前选中的服务与方法 */
+  service?: string;
+  method?: string;
+  /** 调用 metadata（请求头） */
+  metadata?: KeyValueItem[];
+  /** 请求消息草稿（JSON） */
+  payloadDraft?: string;
+}
+
+/** SSE（Server-Sent Events）协议配置：只读流，无发送能力 */
+export interface SseConfig {
+  /** 只显示该 event 类型的消息（空 = 全部） */
+  eventFilter?: string;
+}
+
 export interface RequestConfig {
   /** 协议类型；历史数据缺省时视为 "http" */
   protocol?: RequestProtocol;
@@ -511,6 +590,18 @@ export interface RequestConfig {
   /** 请求文档（Markdown） */
   docs?: string;
   settings?: RequestSettings;
+  /** protocol = websocket 时的配置 */
+  websocket?: WebSocketConfig;
+  /** protocol = socketio 时的配置 */
+  socketio?: SocketIOConfig;
+  /** protocol = mqtt 时的配置 */
+  mqtt?: MqttConfig;
+  /** protocol = mcp 时的配置 */
+  mcp?: McpConfig;
+  /** protocol = grpc 时的配置 */
+  grpc?: GrpcConfig;
+  /** protocol = sse 时的配置 */
+  sse?: SseConfig;
 }
 
 export function createEmptyRequestConfig(): RequestConfig {

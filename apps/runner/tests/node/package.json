@@ -1,0 +1,13 @@
+{
+  "name": "@rabbitpost/runner-test-fixtures",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "cargo test 用的 node 测试服务器依赖（MCP / Socket.IO 对端）",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "socket.io": "^4.8.3",
+    "ws": "^8.18.0",
+    "zod": "^4.3.6"
+  }
+}

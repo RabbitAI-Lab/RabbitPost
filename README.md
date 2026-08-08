@@ -8,9 +8,10 @@ Postman 风格的团队 API 协作平台（Monorepo）。
 | ---- | ---- |
 | Monorepo | Nx + pnpm workspaces |
 | 前端 `apps/web` | React 19 + Vite + antd 5 + zustand |
-| 后端 `apps/api` | Next.js (Route Handlers) + Drizzle ORM |
+| 后端 `apps/api` | Next.js (Route Handlers) + Drizzle ORM（含实时桥：SSE 下行 + POST 上行） |
 | CLI `apps/cli` | Rust 单二进制 `rabbitpost`（接口 CRUD / 用例执行 / 报告上传） |
-| Runner `apps/runner` | Rust 常驻进程 `rabbitpost-runner`（领取派发任务） |
+| Runner `apps/runner` | Rust 常驻进程 `rabbitpost-runner`（派发任务 + 长连接协议客户端：WS/Socket.IO/MQTT/MCP/gRPC/SSE） |
+| 桌面端 `apps/desktop` | Tauri 2 壳（Win/macOS/Linux，WebView 加载远程 Web，前后端零改动） |
 | 共享库 `crates/rp-core` | Rust 执行引擎 + QuickJS 脚本沙箱（CLI 与 Runner 同源） |
 | 数据库 | PostgreSQL（开发环境用 [embedded-postgres](https://www.npmjs.com/package/embedded-postgres)，免安装） |
 | 认证 | Casdoor (OIDC，私有化部署) + 个人 API Key（CLI） |
@@ -21,9 +22,10 @@ Postman 风格的团队 API 协作平台（Monorepo）。
 RabbitPost/
 ├── apps/
 │   ├── web/                 # React 前端（Postman 风格 UI）
-│   ├── api/                 # Next.js API（团队/Workspace/Collection/Env/History/Runs/请求执行代理）
+│   ├── api/                 # Next.js API（团队/Workspace/Collection/Env/History/Runs/请求执行代理/实时桥）
 │   ├── cli/                 # rabbitpost CLI（Rust，本地/CI 用）
-│   └── runner/              # rabbitpost-runner（Rust，服务器常驻领取派发任务）
+│   ├── runner/              # rabbitpost-runner（Rust，服务器常驻：派发任务 + 长连接协议会话）
+│   └── desktop/             # 桌面客户端（Tauri 2 壳，加载远程 Web）
 ├── crates/
 │   └── rp-core/             # CLI 与 Runner 共用的执行引擎 / QuickJS 沙箱 / API 客户端
 ├── packages/
@@ -39,7 +41,12 @@ RabbitPost/
 - **Workspace 管理**：团队下多 Workspace，CRUD
 - **Collection 管理**：Collection + 自引用树（folder/request 无限层级），拖拽排序字段预留
 - **环境变量**：多环境、Key-Value 变量、secret 标记、请求中 `{{var}}` 引用
-- **HTTP 请求**：服务端代理执行（规避 CORS），支持 params/headers/body(raw/form-data/urlencoded/binary)/auth(bearer/basic/api-key)
+- **HTTP 请求**：服务端代理执行（规避 CORS），支持 params/headers/body(raw/form-data/urlencoded/binary/graphql)/auth(bearer/basic/api-key)
+- **多协议请求**：
+  - **GraphQL**：独立协议编辑器（Query/Variables/Headers/Auth），introspection 拉取 Schema 文档 + 编辑器补全（走 `/api/v1/execute`，GraphQL-over-HTTP）
+  - **WebSocket / Socket.IO / MQTT / MCP / gRPC / SSE / GraphQL Subscription**：长连接协议经 Runner 上的 Rust 客户端执行，链路为 浏览器 ⇄（SSE+POST）⇄ api 实时桥 ⇄（NDJSON 流）⇄ Runner ⇄ 目标（浏览器不直连目标，无 CORS/混合内容限制；Runner 部署到内网即可达内网目标）；消息时间线 + 连接状态实时展示；gRPC 支持 unary 与全部流式调用，服务发现优先 server reflection、可退化为 .proto 文本
+  - 协议在新建请求（草稿）时选择，保存后不可修改；各协议配置随请求持久化，连接状态与消息记录不持久化
+  - 长连接协议不走 `/api/v1/execute` 一次性执行模型（该接口会明确拒绝），由 `/api/v1/rt/sessions` 会话接口承载
 - **Scripts**：Pre-request 与 Tests 脚本（服务端 node:vm、CLI/Runner 内嵌 QuickJS，`rp.*` API + 极简 `rp.expect` 断言，`pm` 为兼容别名）
 - **History**：每次请求（含失败）自动落库，可回放为新草稿
 - **Runs**：派发任务（Runner 执行）与 CLI 本机执行统一落库，Collection 的 Runs tab 可查看记录与逐请求断言结果
@@ -82,7 +89,7 @@ pnpm dev
 ## 常用命令
 
 ```bash
-pnpm dev          # 并行启动 web + api（nx run-many）
+pnpm dev          # 并行启动 web + api（nx run-many；api 会自动拉起内嵌 Runner）
 pnpm dev:web      # 仅前端
 pnpm dev:api      # 仅后端
 pnpm db:up        # 启动嵌入式 PG（开发）
@@ -91,6 +98,8 @@ pnpm build        # 全部构建
 pnpm typecheck    # 全部类型检查
 pnpm runner:build # 构建 Runner（apps/runner/target/release/rabbitpost-runner）
 pnpm cli:build    # 构建 CLI（apps/cli/target/release/rabbitpost）
+pnpm dev:desktop  # 启动桌面壳（并行起 web dev server + Tauri 窗口）
+pnpm desktop:build# 打包桌面安装包（本机平台，产物在 apps/desktop/src-tauri/target/release/bundle）
 pnpm cli:package  # 交叉编译全平台 CLI 并输出到 apps/api/public/cli（供面板下载）
 pnpm runner:test  # Runner + rp-core 测试（单元 + 契约）
 pnpm cli:test     # CLI 测试（单元 + assert_cmd/wiremock 功能测试）
@@ -143,6 +152,30 @@ Runner（`rabbitpost-runner serve`）使用团队级 Runner Token（`rpr_...`）
 > Windows ARM64 暂缺：rquickjs-sys 未附带 aarch64-pc-windows-msvc 预生成 bindings，
 > 需 bindgen 现场生成，后续补齐；ARM 平台已由 macOS arm64 / Linux arm64 覆盖。
 
+## 桌面客户端
+
+`apps/desktop` 是 Tauri 2 壳：窗口直接加载 Web 地址（默认 `http://localhost:5173`），
+登录与所有功能与浏览器一致。要指向线上实例，改
+`apps/desktop/src-tauri/tauri.conf.json` 中 `app.windows[0].url` 一处即可。
+
+**本地执行（local-agent）**：桌面壳启动时自动拉起随包分发的
+`rabbitpost-runner local-agent`（只监听 127.0.0.1:17337+，**不注册、不连接服务器**）。
+前端探测到它后，"执行"类请求改道本机，不再经过服务器代理：
+
+- HTTP 请求（Send/用例 Run）：本机执行（rp-core 引擎 + QuickJS 脚本，语义与服务端一致），
+  结果自动回传服务器写入 History；agent 不可用时自动回退服务器执行
+- 长连接协议（WebSocket/MQTT/gRPC/MCP/SSE 等）：session 由本机 agent 托管，
+  可直接触达本机/内网目标
+
+```bash
+pnpm dev:desktop    # 本地调试（自动并行启动 web dev server；会先构建 sidecar）
+pnpm desktop:build  # 打出本机平台安装包（含内嵌 runner sidecar）
+```
+
+Windows（.msi/.exe）与 Linux（.deb/.AppImage）安装包由 `desktop-release` 工作流
+跨平台构建：推 `desktop-v*` tag 产出带版本号的 Release，手动触发则刷新
+`desktop-latest` 滚动 Release，PR 上只做构建验证。
+
 ## API 一览（均需会话，除 auth 外）
 
 | 方法 | 路径 | 说明 |
@@ -163,6 +196,7 @@ Runner（`rabbitpost-runner serve`）使用团队级 Runner Token（`rpr_...`）
 | GET/POST | `/api/v1/workspaces/:id/environments` | 环境列表 / 创建 |
 | GET/PATCH/DELETE | `/api/v1/environments/:id` | 环境详情/更新/删除 |
 | GET/DELETE | `/api/v1/workspaces/:id/history` | 历史列表 / 清空 |
+| POST | `/api/v1/workspaces/:id/history` | 客户端上报一条历史（桌面端本地执行后回传） |
 | POST | `/api/v1/execute` | 服务端代理执行 HTTP 请求 |
 | GET | `/api/v1/collections/:id/runs` | 该 Collection 的执行记录（Runs tab） |
 | POST | `/api/v1/collections/:id/runs` | CLI 上传执行报告（`rabbitpost.run-report` 格式） |
