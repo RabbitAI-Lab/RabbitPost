@@ -27,10 +27,10 @@ use tonic_reflection::pb::v1alpha::ServerReflectionRequest;
 
 use super::SessionCtl;
 
-/// 服务发现与连接就绪的超时（对齐 gateway 的 DISCOVERY_TIMEOUT_MS）
+/// 服务发现与连接就绪的超时
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// 响应 JSON 序列化选项：对齐 gateway 的 TO_OBJECT_OPTIONS
+/// 响应 JSON 序列化选项
 /// （proto 字段名、64 位整数转字符串、枚举用名字、省略默认值）
 const SER_OPTS: SerializeOptions = SerializeOptions::new().use_proto_field_name(true);
 
@@ -46,8 +46,7 @@ pub struct GrpcSessionConfig {
 }
 
 impl GrpcSessionConfig {
-    /// config 形状（与 gateway grpc.ts 一致）：
-    /// `{ tls?: bool, protoText?: string, metadata?: [{key, value, enabled?}] }`
+    /// config 形状：`{ tls?: bool, protoText?: string, metadata?: [{key, value, enabled?}] }`
     pub fn from_parts(url: String, config: Option<Value>) -> Self {
         let address = match url.find("://") {
             Some(idx) => url[idx + 3..].to_string(),
@@ -123,7 +122,7 @@ fn receipt(events: &mpsc::UnboundedSender<Value>, data: &str) {
 // 动态消息编解码
 // ---------------------------------------------------------------------------
 
-/// DynamicMessage → JSON（省略默认值；字段名/枚举/整数表示对齐 gateway）
+/// DynamicMessage → JSON（省略默认值；proto 字段名、枚举用名字、64 位整数转字符串）
 fn message_to_json(msg: &DynamicMessage) -> Value {
     msg.serialize_with_options(serde_json::value::Serializer, &SER_OPTS)
         .unwrap_or(Value::Null)
@@ -588,7 +587,7 @@ fn invoke(
     let (payload_tx, request_stream) = match kind {
         CallKind::Client | CallKind::Bidi => {
             let (tx, rx) = mpsc::channel(32);
-            // 与 gateway 一致：建流后立即写入首条 payload
+            // 建流后立即写入首条 payload
             let _ = tx.try_send(initial.clone());
             (Some(tx), Some(ReceiverStream::new(rx)))
         }

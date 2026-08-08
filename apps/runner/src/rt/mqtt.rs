@@ -199,7 +199,7 @@ pub async fn run_mqtt_session(
     let (client, mut eventloop) = AsyncClient::new(options, 64);
 
     // EventLoop 独立 task 驱动：网络事件经内部 channel 交给主循环统一转成 session 事件；
-    // poll 出错（含连接被拒）按 gateway 行为：报错并结束，不做自动重连
+    // poll 出错（含连接被拒）：报错并结束，不做自动重连
     let (net_tx, mut net_rx) = mpsc::channel::<Result<Event, ConnectionError>>(64);
     let driver = tokio::spawn(async move {
         loop {
@@ -611,7 +611,7 @@ mod tests {
 
     #[tokio::test]
     async fn mqtt_session_reports_connect_error() {
-        // 连接未监听端口：error 事件 + status closed（与 gateway 行为一致），任务退出
+        // 连接未监听端口：error 事件 + status closed，任务退出
         let (_ctl_tx, ctl_rx) = mpsc::channel(8);
         let (ev_tx, mut ev_rx) = mpsc::unbounded_channel();
         let session = tokio::spawn(run_mqtt_session(

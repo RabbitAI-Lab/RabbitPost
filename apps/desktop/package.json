@@ -6,7 +6,8 @@
   "scripts": {
     "sidecar": "node scripts/prepare-sidecar.mjs",
     "dev": "node scripts/prepare-sidecar.mjs && tauri dev",
-    "build": "node scripts/prepare-sidecar.mjs && tauri build"
+    "build": "node scripts/prepare-sidecar.mjs && tauri build",
+    "test": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

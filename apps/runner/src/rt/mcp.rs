@@ -29,7 +29,7 @@ pub struct McpSessionConfig {
 }
 
 impl McpSessionConfig {
-    /// config 形状（与 gateway mcp.ts 一致）：`{ transport?: "streamable-http" | "sse" | "auto" }`
+    /// config 形状：`{ transport?: "streamable-http" | "sse" | "auto" }`
     pub fn from_parts(url: String, config: Option<Value>) -> Self {
         let transport = config
             .as_ref()
@@ -96,7 +96,7 @@ pub async fn run_mcp_session(
     };
 
     send(&events, json!({"t": "status", "state": "open"}));
-    // serverInfo：server / capabilities / instructions（与 gateway 字段一致）
+    // serverInfo：server / capabilities / instructions
     if let Some(info) = client.peer_info() {
         let mut result = serde_json::Map::new();
         result.insert(

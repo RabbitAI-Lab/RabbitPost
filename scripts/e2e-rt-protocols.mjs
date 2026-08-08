@@ -2,7 +2,12 @@
  * 全协议全链路验收：浏览器路径（POST + SSE + 会话 cookie）→ api 实时桥 → runner → apps/mock-server。
  * 覆盖：websocket / socketio / mqtt / sse / graphql-subscription / mcp / grpc。
  *
- * 前提：`pnpm dev`（api :4000 + 内嵌 runner rt link）与 mock-server（:3090 / :1883 / :50051）已启动。
+ * 公共前提：mock-server 已启动（:3090 / :1883 / :50051）。
+ * 前提（两种模式二选一）：
+ *   A. api 桥模式：`pnpm dev`（api :4000 + 内嵌 runner rt link）+ mock-server，直接运行本脚本
+ *   B. local-agent 直连模式（桌面端本地执行路径）：启动 `rabbitpost-runner local-agent --port 17360`，
+ *      然后 `API_ORIGIN=http://127.0.0.1:17360 node scripts/e2e-rt-protocols.mjs`（无需会话 cookie）
+ * 两种模式都应 ALL PROTOCOLS PASS。
  * 用法：node scripts/e2e-rt-protocols.mjs
  */
 import { createHmac } from "node:crypto";

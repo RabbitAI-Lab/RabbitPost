@@ -2,7 +2,7 @@
  * 实时（长连接协议）通道地基：浏览器 ⇄ api ⇄ runner。
  *
  * 拓扑：浏览器 ──POST/SSE──▶ api ──NDJSON downlink──▶ runner ──▶ 目标服务。
- * 帧契约与 apps/gateway/src/types.ts 完全一致（ServerMessage 形状：status/message/error）。
+ * 帧契约：ServerMessage 形状（status/message/error），三端保持一致，勿单独改动。
  *
  * 会话与 downlink 状态全部保存在 api 进程内存中（单实例假设）：
  * 多实例部署或进程重启后，session 全部失效，需要客户端重建。
@@ -11,7 +11,7 @@ import { getEmbeddedRunnerId } from "./embedded-runner";
 import { HttpError } from "./http";
 
 // ---------------------------------------------------------------------------
-// 帧契约（与 apps/gateway/src/types.ts 保持一致，勿单独改动）
+// 帧契约（status/message/error，三端保持一致，勿单独改动）
 // ---------------------------------------------------------------------------
 
 export const RT_PROTOCOLS = [

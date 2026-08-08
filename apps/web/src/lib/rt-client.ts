@@ -1,7 +1,6 @@
 /**
  * 长连接协议的浏览器端客户端（经 apps/api 实时桥 + runner 执行）：
  * - 创建 session / 发消息 / 关闭 走 POST，事件下行走 SSE（EventSource）
- * - 接口与事件形状与原 gateway-client 完全一致，协议编辑器无感知
  * - 帧格式（status/message/error）与 apps/api/src/lib/rt.ts 的 ServerMessage 一致
  * - 桌面模式：session 改道本机 local-agent（127.0.0.1），不经过服务器
  */
@@ -17,7 +16,7 @@ export type RtProtocol =
   | "sse"
   | "graphql-subscription";
 
-export interface GatewaySessionEvent {
+export interface RtSessionEvent {
   type: "status" | "message" | "error";
   state?: "connecting" | "open" | "closed" | "error";
   code?: number;
@@ -29,7 +28,7 @@ export interface GatewaySessionEvent {
   message?: string;
 }
 
-type SessionListener = (event: GatewaySessionEvent) => void;
+type SessionListener = (event: RtSessionEvent) => void;
 
 interface SessionHandle {
   sessionId: string;
@@ -105,7 +104,7 @@ class RtClient {
       if (msg.t === "status") {
         handle.listener({
           type: "status",
-          state: msg.state as GatewaySessionEvent["state"],
+          state: msg.state as RtSessionEvent["state"],
           code: msg.code as number | undefined,
           reason: msg.reason as string | undefined,
         });

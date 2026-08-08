@@ -41,8 +41,7 @@ pub struct SioSessionConfig {
 }
 
 impl SioSessionConfig {
-    /// config 形状（与 gateway socketio.ts 的子集一致）：
-    /// `{ path?: string, auth?: object, version?: "v2" | "v3" | "v4" }`
+    /// config 形状：`{ path?: string, auth?: object, version?: "v2" | "v3" | "v4" }`
     pub fn from_parts(url: String, config: Option<Value>) -> Self {
         // namespace 写在 URL 路径里；剥离后换成 engine.io 端点
         let (origin, namespace) = match url::Url::parse(&url) {

@@ -95,7 +95,7 @@ export const POST = handleRoute(async (req, _ctx, user) => {
     throw new HttpError(
       400,
       "UNSUPPORTED_PROTOCOL",
-      `协议 ${protocol} 是长连接协议，请通过实时网关（gateway）执行，而非一次性请求执行接口`,
+      `协议 ${protocol} 是长连接协议，请通过实时通道（rt session）执行，而非一次性请求执行接口`,
     );
   }
   // viewer 也允许发送请求（与 Postman 一致，只读成员仍可调试）
