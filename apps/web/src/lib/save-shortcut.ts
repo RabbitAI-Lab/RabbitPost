@@ -122,3 +122,66 @@ export function confirmCloseTab(key: string) {
     ),
   });
 }
+
+/**
+ * 批量关闭 tab（Close Other Tabs / Close All Tabs）：待关闭集合中有未保存修改时
+ * 弹确认（取消 / 直接关闭），否则直接执行。非激活 tab 未注册保存处理器，故不提供「保存并关闭」。
+ */
+export function confirmCloseTabs(keys: string[], close: () => void) {
+  const { tabs } = useTabsStore.getState();
+  const keySet = new Set(keys);
+  const dirtyCount = tabs.filter((t) => keySet.has(t.key) && isTabDirty(t)).length;
+  if (dirtyCount === 0) {
+    close();
+    return;
+  }
+
+  // 按钮尺寸与 confirmCloseTab 保持一致
+  const btnStyle = { height: 24, fontSize: 12, padding: "0 12px" };
+
+  const modal = Modal.confirm({
+    centered: true,
+    icon: null,
+    width: 470,
+    closable: true,
+    title: createElement(
+      "div",
+      { style: { fontSize: 13, fontWeight: 600, marginBottom: 8 } },
+      "关闭标签页",
+    ),
+    content: createElement(
+      "div",
+      { style: { fontSize: 12, lineHeight: 1.6 } },
+      `即将关闭的标签页中有 ${dirtyCount} 个包含未保存的修改，直接关闭将丢失这些修改。`,
+    ),
+    footer: createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "flex-end",
+          gap: 8,
+          marginTop: 24,
+        },
+      },
+      createElement(
+        Button,
+        { style: btnStyle, onClick: () => modal.destroy() },
+        "取消",
+      ),
+      createElement(
+        Button,
+        {
+          type: "primary",
+          danger: true,
+          style: btnStyle,
+          onClick: () => {
+            modal.destroy();
+            close();
+          },
+        },
+        "直接关闭",
+      ),
+    ),
+  });
+}

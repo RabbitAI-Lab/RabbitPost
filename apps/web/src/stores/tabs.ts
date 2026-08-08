@@ -224,6 +224,12 @@ interface TabsState {
   /** Overview 文档 / Collection 变量保存后刷新快照 */
   markDocSaved: (key: string) => void;
   closeTab: (key: string) => void;
+  /** 关闭除 key 外的所有 tab（调用方需先处理未保存确认） */
+  closeOtherTabs: (key: string) => void;
+  /** 关闭所有 tab（调用方需先处理未保存确认） */
+  closeAllTabs: () => void;
+  /** 复制请求 tab 为新草稿（紧跟在原 tab 之后）；仅支持普通请求 tab */
+  duplicateTab: (key: string) => void;
   setActive: (key: string) => void;
   updateConfig: (key: string, patch: Partial<RequestConfig>) => void;
   /** 整体替换请求配置（用例 Reset from request 后同步 tab 内容） */
@@ -612,6 +618,41 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       const activeKey =
         s.activeKey === key ? (tabs[tabs.length - 1]?.key ?? null) : s.activeKey;
       return { tabs, activeKey };
+    });
+  },
+
+  closeOtherTabs: (key) => {
+    set((s) => {
+      if (!s.tabs.some((t) => t.key === key)) return s;
+      return { tabs: s.tabs.filter((t) => t.key === key), activeKey: key };
+    });
+  },
+
+  closeAllTabs: () => set({ tabs: [], activeKey: null }),
+
+  duplicateTab: (key) => {
+    const source = get().tabs.find((t) => t.key === key);
+    // 用例 / 场景步骤 tab 有独立保存目标，不允许复制
+    if (!source || source.kind !== "request" || source.caseId || source.stepId) return;
+    const config = JSON.parse(JSON.stringify(source.config)) as RequestConfig;
+    const tab: RequestTab = {
+      kind: "request",
+      key: `draft-${draftSeq++}`,
+      itemId: null,
+      collectionId: source.collectionId,
+      name: `${source.name} 副本`,
+      config,
+      // 副本内容与快照一致，初始不算 dirty
+      savedSnapshot: snapshot(config),
+      response: null,
+      sending: false,
+      saving: false,
+    };
+    set((s) => {
+      const idx = s.tabs.findIndex((t) => t.key === key);
+      const tabs = [...s.tabs];
+      tabs.splice(idx + 1, 0, tab);
+      return { tabs, activeKey: tab.key };
     });
   },
 
