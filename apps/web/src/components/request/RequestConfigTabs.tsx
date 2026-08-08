@@ -21,7 +21,7 @@ import {
 } from "antd";
 import { useEffect, useState, type ReactNode } from "react";
 import type { KeyValueItem } from "@rabbitpost/shared";
-import { isAuthConfigured } from "@rabbitpost/shared";
+import { BODY_TYPES, isAuthConfigured } from "@rabbitpost/shared";
 import { useCasesStore } from "../../stores/cases";
 import { useTabsStore, type RequestTab } from "../../stores/tabs";
 import KeyValueEditor, { newKvItem } from "../common/KeyValueEditor";
@@ -313,9 +313,13 @@ export default function RequestConfigTabs({ tab }: Props) {
   // form-data / x-www-form-urlencoded 的 Bulk Editor 状态（同 Params）
   const [bodyBulk, setBodyBulk] = useState(false);
   const [bodyBulkText, setBodyBulkText] = useState("");
+  // body 类型缺失/非法（导入或历史数据）时按 none 展示，与后端 execute 容错对齐
+  const bodyType = (BODY_TYPES as readonly string[]).includes(tab.config.body.type)
+    ? tab.config.body.type
+    : "none";
   // 当前 body 类型对应的 KV 字段名
   const bodyKvField =
-    tab.config.body.type === "form-data" ? ("formData" as const) : ("urlencoded" as const);
+    bodyType === "form-data" ? ("formData" as const) : ("urlencoded" as const);
 
   /** 点击 Snippet：把片段代码追加到对应脚本末尾 */
   const appendScript = (field: "preRequest" | "test", code: string) => {
@@ -479,7 +483,7 @@ export default function RequestConfigTabs({ tab }: Props) {
         },
         {
           key: "body",
-          label: <TabLabel text="Body" dot={tab.config.body.type !== "none"} />,
+          label: <TabLabel text="Body" dot={bodyType !== "none"} />,
           children: (
             <div>
               <div
@@ -494,7 +498,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                   {/* Postman 风格圆形单选；顺序与 Postman 一致 */}
                   <Radio.Group
                     size="small"
-                    value={tab.config.body.type}
+                    value={bodyType}
                     onChange={(e) => {
                       setBodyBulk(false);
                       patch(tab.key, {
@@ -510,7 +514,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                     <Radio value="graphql">GraphQL</Radio>
                   </Radio.Group>
                   {/* raw 时语言下拉紧跟单选组，同 Postman；胡萝卜橙高亮便于发现 */}
-                  {tab.config.body.type === "raw" && (
+                  {bodyType === "raw" && (
                     <Select
                       size="small"
                       variant="borderless"
@@ -537,7 +541,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                     />
                   )}
                   {/* GraphQL 时 schema 获取方式下拉 + 刷新按钮，同 Postman */}
-                  {tab.config.body.type === "graphql" && (
+                  {bodyType === "graphql" && (
                     <>
                       <Select
                         size="small"
@@ -565,21 +569,21 @@ export default function RequestConfigTabs({ tab }: Props) {
                   )}
                 </div>
                 {/* form-data / urlencoded 时右侧显示 Bulk Editor 切换，同 Params */}
-                {(tab.config.body.type === "form-data" ||
-                  tab.config.body.type === "x-www-form-urlencoded") && (
+                {(bodyType === "form-data" ||
+                  bodyType === "x-www-form-urlencoded") && (
                   <Button type="link" size="small" onClick={toggleBodyBulk}>
                     {bodyBulk ? "Key-Value Editor" : "Bulk Editor"}
                   </Button>
                 )}
                 {/* raw 时右侧显示 Beautify 格式化按钮 */}
-                {tab.config.body.type === "raw" && (
+                {bodyType === "raw" && (
                   <Button type="link" size="small" onClick={beautifyRaw}>
                     Beautify
                   </Button>
                 )}
               </div>
 
-              {tab.config.body.type === "raw" && (
+              {bodyType === "raw" && (
                 <VarTextArea
                   className="code-font"
                   autoSize={{ minRows: 8, maxRows: 24 }}
@@ -592,7 +596,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                   }
                 />
               )}
-              {tab.config.body.type === "x-www-form-urlencoded" &&
+              {bodyType === "x-www-form-urlencoded" &&
                 (bodyBulk ? (
                   bodyBulkTextArea
                 ) : (
@@ -605,7 +609,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                     highlightVars
                   />
                 ))}
-              {tab.config.body.type === "form-data" &&
+              {bodyType === "form-data" &&
                 (bodyBulk ? (
                   bodyBulkTextArea
                 ) : (
@@ -619,7 +623,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                     highlightVars
                   />
                 ))}
-              {tab.config.body.type === "binary" && (
+              {bodyType === "binary" && (
                 <Space>
                   {/* 选择文件后读为 base64 存入条目；阻止 antd 自动上传 */}
                   <Upload
@@ -663,7 +667,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                   )}
                 </Space>
               )}
-              {tab.config.body.type === "graphql" && (
+              {bodyType === "graphql" && (
                 <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
                   {/* 左右分栏：左 Query，右 Variables */}
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -709,7 +713,7 @@ export default function RequestConfigTabs({ tab }: Props) {
                   </div>
                 </div>
               )}
-              {tab.config.body.type === "none" && (
+              {bodyType === "none" && (
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   该请求不携带 Body。
                 </Typography.Text>

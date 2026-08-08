@@ -43,7 +43,8 @@ const settingsSchema = z.object({
 });
 
 // 各 auth 类型与 body 的字段结构随类型而异，统一 passthrough，避免静默丢弃配置
-const requestSchema = z
+// 导出供测试直接验证容错行为
+export const requestSchema = z
   .object({
     method: z.enum(HTTP_METHODS),
     url: z.string().min(1),
@@ -51,7 +52,9 @@ const requestSchema = z
     headers: z.array(kvSchema).default([]),
     body: z
       .object({
-        type: z.enum(BODY_TYPES),
+        // 未选择 body 类型（缺字段）按 none 处理；非法值也容错为 none，
+        // 避免执行链路因配置小瑕疵整体失败
+        type: z.enum(BODY_TYPES).catch("none").default("none"),
         raw: z.string().optional(),
         rawLanguage: z.enum(RAW_LANGUAGES).optional(),
         formData: z.array(kvSchema).optional(),
@@ -59,7 +62,8 @@ const requestSchema = z
         binaryBase64: z.string().optional(),
         binaryFileName: z.string().optional(),
       })
-      .passthrough(),
+      .passthrough()
+      .default({ type: "none" }),
     auth: z
       .object({
         type: z.enum(AUTH_TYPES),
