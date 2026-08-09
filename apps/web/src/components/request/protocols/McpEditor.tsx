@@ -5,13 +5,15 @@ import {
   SendOutlined,
 } from "@ant-design/icons";
 import { App, Button, Descriptions, Input, Select, Space, Splitter, Tabs, Tag } from "antd";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import MessageLog from "../MessageLog";
 import VarInput from "../../common/variable/VarInput";
 import VarTextArea from "../../common/variable/VarTextArea";
 import { useTabsStore, type RequestTab } from "../../../stores/tabs";
 import { substituteVariables } from "@rabbitpost/shared";
 import { useRtConnection } from "./use-rt-connection";
+import { historyApi } from "../../../api";
+import { useAppStore } from "../../../stores/app";
 
 interface Props {
   tab: RequestTab;
@@ -68,6 +70,68 @@ export default function McpEditor({ tab }: Props) {
   const operation = mcpCfg.operation ?? "tools/list";
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
 
+  const currentWorkspaceId = useAppStore((s) => s.currentWorkspaceId);
+
+  /** MCP 动作完成后上报历史记录（对齐 Postman MCP 历史） */
+  const reportHistory = useCallback(
+    (outData: string, inData: string) => {
+      if (!currentWorkspaceId) return;
+      try {
+        const outFrame = JSON.parse(outData) as { action?: string };
+        const inFrame = JSON.parse(inData) as {
+          action?: string;
+          result?: unknown;
+          error?: string;
+        };
+        const action = outFrame.action ?? "unknown";
+        const isError = !!inFrame.error;
+        const resultText = isError
+          ? inFrame.error!
+          : JSON.stringify(inFrame.result, null, 2);
+
+        void historyApi
+          .report(currentWorkspaceId, {
+            name: `MCP ${action}`,
+            request: {
+              ...tab.config,
+              protocol: "mcp",
+              // 将当前操作与参数快照到 mcp 配置中，便于历史回放
+              mcp: {
+                ...tab.config.mcp,
+                operation: action,
+                paramsDraft: (() => {
+                  try {
+                    const { action: _, ...rest } = outFrame;
+                    return Object.keys(rest).length > 0
+                      ? JSON.stringify(rest, null, 2)
+                      : undefined;
+                  } catch {
+                    return undefined;
+                  }
+                })(),
+              },
+            },
+            response: isError
+              ? null
+              : {
+                  status: 0,
+                  statusText: action,
+                  sizeBytes: new TextEncoder().encode(resultText).length,
+                  durationMs: 0,
+                  bodyText: resultText,
+                },
+            error: isError ? resultText : null,
+          })
+          .catch(() => {});
+        // 通知 History 面板刷新
+        window.dispatchEvent(new CustomEvent("rabbitpost:history-updated"));
+      } catch {
+        /* 帧解析失败不上报 */
+      }
+    },
+    [currentWorkspaceId, tab.config],
+  );
+
   const conn = useRtConnection({
     tab,
     protocol: "mcp",
@@ -86,6 +150,7 @@ export default function McpEditor({ tab }: Props) {
         /* 非 JSON 忽略 */
       }
     },
+    onActionResult: reportHistory,
   });
 
   const handleExecute = () => {

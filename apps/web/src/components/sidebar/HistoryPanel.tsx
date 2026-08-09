@@ -19,6 +19,17 @@ const METHOD_COLORS: Record<string, string> = {
   OPTIONS: "#6b6b6b",
 };
 
+/** 非 HTTP 协议在 History 中的标签与颜色 */
+const PROTOCOL_LABELS: Record<string, { label: string; color: string }> = {
+  mcp: { label: "MCP", color: "#10a37f" },
+  websocket: { label: "WS", color: "#818cf8" },
+  socketio: { label: "SIO", color: "#e0e0e0" },
+  mqtt: { label: "MQTT", color: "#c084fc" },
+  sse: { label: "SSE", color: "#facc15" },
+  grpc: { label: "gRPC", color: "#6cb6ff" },
+  graphql: { label: "GQL", color: "#e535ab" },
+};
+
 /** 按天分组的条目 */
 type DayGroup = { key: string; label: string; entries: HistoryEntry[] };
 
@@ -183,16 +194,24 @@ export default function HistoryPanel({ visible = true }: { visible?: boolean }) 
                     }}
                     onClick={() => openFromHistory(entry)}
                   >
-                    <span
-                      style={{
-                        fontSize: 8,
-                        fontWeight: 500,
-                        color: METHOD_COLORS[entry.request.method] ?? "#6b6b6b",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {entry.request.method}
-                    </span>
+                    {(() => {
+                      const proto = entry.request.protocol;
+                      const protoInfo = proto && proto !== "http" ? PROTOCOL_LABELS[proto] : undefined;
+                      const label = protoInfo?.label ?? entry.request.method;
+                      const color = protoInfo?.color ?? METHOD_COLORS[entry.request.method] ?? "#6b6b6b";
+                      return (
+                        <span
+                          style={{
+                            fontSize: 8,
+                            fontWeight: 500,
+                            color,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {label}
+                        </span>
+                      );
+                    })()}
                     <Typography.Text
                       ellipsis
                       style={{ flex: 1, fontSize: 12, color: "#212121" }}

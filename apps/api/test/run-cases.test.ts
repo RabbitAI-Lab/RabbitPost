@@ -292,4 +292,57 @@ describe("CLI 报告上传（cli 链路）", () => {
     expect(uploaded.status).toBe(201);
     expect(uploaded.data.source).toBe("cli");
   });
+
+  it("上报结果含 NUL（二进制响应体）时剥除后正常落库", async () => {
+    const s = await seedBasic();
+
+    const dispatched = await envelope<RunJob>(
+      await dispatchRun(
+        authed(`/api/v1/teams/${s.teamId}/runs`, s.apiToken, {
+          method: "POST",
+          json: { workspaceId: s.workspaceId, targetType: "request", targetId: s.itemId },
+        }),
+        teamCtx(s.teamId),
+      ),
+    );
+    const claimed = await envelope<{ job: RunnerJobAssignment }>(
+      await claimJob(authed("/api/v1/runner/jobs/claim", s.runnerToken, { method: "POST", json: {} }), {}),
+    );
+    const job = claimed.data.job;
+
+    // 模拟 1x1 PNG 经 from_utf8_lossy 后的响应体：合法 UTF-8 但含 \0
+    const pngLike = "�PNG\r\n\0\r\nIHDR\0\0";
+    const reported = await envelope(
+      await reportResults(
+        authed(`/api/v1/runner/jobs/${job.jobId}/results`, s.runnerToken, {
+          method: "POST",
+          json: {
+            results: [
+              {
+                itemId: s.itemId,
+                name: "Binary 1x1 PNG",
+                method: "GET",
+                url: "http://x/advanced/binary",
+                ok: true,
+                status: 200,
+                durationMs: 3,
+                responseHeaders: { "content-type": "image/png" },
+                responseBody: pngLike,
+              },
+            ],
+          },
+        }),
+        jobCtx(job.jobId),
+      ),
+    );
+    expect(reported.status).toBe(200);
+
+    const rows = await db
+      .select()
+      .from(runJobResults)
+      .where(eq(runJobResults.jobId, job.jobId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.responseBody).toBe(pngLike.replace(/\0/g, ""));
+    expect(rows[0]!.responseBody).not.toContain("\0");
+  });
 });

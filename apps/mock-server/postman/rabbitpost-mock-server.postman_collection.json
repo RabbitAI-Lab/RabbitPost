@@ -1,0 +1,2367 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-0001-4000-8000-rabbitpostmock",
+    "name": "RabbitPost Mock Server — 全协议测试集",
+    "description": "# RabbitPost Mock Server — 全协议测试集\n\n针对 RabbitPost mock-server（`http://localhost:3090`）的**全协议 HTTP 面**自动化测试集，覆盖：\n\n- Health 健康检查\n- HTTP Methods 回显（GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS/echo）\n- Auth（Basic / Bearer / API-Key / Digest / OAuth2 / Hawk / OAuth1，含 Postman-echo 兼容端点）\n- Body Types（JSON / form / multipart / XML / text / binary / GraphQL / any）\n- Status Codes（200–503 共 16 个状态码）\n- Advanced（delay / redirect / cookies / large / binary / response-headers / cache / ETag 304 / stream / gzip / deflate / utf8 / ip / headers / server-events / time）\n\n- SSE（`/sse/finite`）\n- GraphQL（`/graphql`）\n- MCP（`/mcp`，Streamable HTTP，SSE 格式响应）\n\n运行方式：\n\n```bash\npostman collection run apps/mock-server/postman/rabbitpost-mock-server.postman_collection.json\n```\n\n---\n\n## 实时协议（Collection JSON 无法表达，需在 Postman 应用中手工创建）\n\n以下实时/长连接协议请求无法用 Collection JSON 静态描述，请在 Postman 应用中按下面参数手工创建：\n\n### WebSocket\n- URL: `ws://localhost:3090/ws/echo`\n- 连接后收到欢迎消息：`{\"type\":\"welcome\",\"message\":\"connected to mock ws echo\"}`\n- 之后发送的文本/二进制帧会被**原样回显**\n\n### Socket.IO\n- URL: `http://localhost:3090`（path `/socket.io`）\n- 连接成功收到 `welcome` 事件，payload `{msg: 'hi'}`\n- 发送任意事件 `X` 会收到 `echo:X` 事件\n- 带 ack 回调的发送会收到回调值 `'ack-ok'`\n\n### gRPC\n- 地址: `localhost:50051`\n- server reflection 已开启，可直接在 Postman 中导入\n- service: `rabbitpost.test.echo.Echo`\n- 方法: `Unary` / `ServerStream` / `ClientStream` / `Bidi`\n- 消息: `EchoRequest { text, count }` → `EchoResponse { text: 'echo: …', seq }`\n\n### MQTT\n- broker: `mqtt://localhost:1883`（aedes）\n- 无认证，任意 clientId\n- 标准 pub/sub 行为",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3090",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status field is ok', () => {",
+                  "  pm.expect(pm.response.json().status).to.equal('ok');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "HTTP Methods",
+      "item": [
+        {
+          "name": "GET /get",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/get?foo=bar"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Query args echoed', () => {",
+                  "  pm.expect(pm.response.json().args.foo).to.equal('bar');",
+                  "});",
+                  "pm.test('URL echoed', () => {",
+                  "  pm.expect(pm.response.json().url).to.include('/get?foo=bar');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST /post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"a\":1}"
+            },
+            "url": "{{baseUrl}}/post"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON body echoed', () => {",
+                  "  pm.expect(pm.response.json().json.a).to.equal(1);",
+                  "});",
+                  "pm.test('Raw data echoed', () => {",
+                  "  pm.expect(pm.response.json().data).to.include('\"a\":1');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT /put",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"update\":true}"
+            },
+            "url": "{{baseUrl}}/put"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON body echoed', () => {",
+                  "  pm.expect(pm.response.json().json.update).to.equal(true);",
+                  "});",
+                  "pm.test('URL is /put', () => {",
+                  "  pm.expect(pm.response.json().url).to.include('/put');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PATCH /patch",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"patch\":1}"
+            },
+            "url": "{{baseUrl}}/patch"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON body echoed', () => {",
+                  "  pm.expect(pm.response.json().json.patch).to.equal(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE /delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/delete"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('URL is /delete', () => {",
+                  "  pm.expect(pm.response.json().url).to.include('/delete');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "HEAD /head",
+          "request": {
+            "method": "HEAD",
+            "header": [],
+            "url": "{{baseUrl}}/head"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Body is empty', () => {",
+                  "  pm.expect(pm.response.text()).to.equal('');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "OPTIONS /options",
+          "request": {
+            "method": "OPTIONS",
+            "header": [],
+            "url": "{{baseUrl}}/options"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));",
+                  "pm.test('Allow-Methods header present', () => {",
+                  "  pm.expect(pm.response.headers.get('Access-Control-Allow-Methods') || '').to.include('GET');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET /echo with params and custom header",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Custom-Header",
+                "value": "rabbitpost-test"
+              }
+            ],
+            "url": "{{baseUrl}}/echo?param1=value1&param2=value2"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Query params echoed', () => {",
+                  "  const args = pm.response.json().args;",
+                  "  pm.expect(args.param1).to.equal('value1');",
+                  "  pm.expect(args.param2).to.equal('value2');",
+                  "});",
+                  "pm.test('Custom header echoed', () => {",
+                  "  pm.expect(pm.response.json().headers['x-custom-header']).to.equal('rabbitpost-test');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Basic Auth — 成功",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "testuser",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "testpass",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/basic/testuser/testpass"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Authenticated', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.authenticated).to.equal(true);",
+                  "  pm.expect(body.user).to.equal('testuser');",
+                  "  pm.expect(body.type).to.equal('basic');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Basic Auth — 错误密码失败",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "testuser",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "wrongpass",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/basic/testuser/testpass"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Bearer Auth",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "my-secret-token",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/bearer/my-secret-token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Authenticated with token', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.authenticated).to.equal(true);",
+                  "  pm.expect(body.token).to.equal('my-secret-token');",
+                  "  pm.expect(body.type).to.equal('bearer');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "API Key — query 参数",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "api_key",
+                  "type": "string"
+                },
+                {
+                  "key": "value",
+                  "value": "query-key-123",
+                  "type": "string"
+                },
+                {
+                  "key": "in",
+                  "value": "query",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/api-key"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('API key via query', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.authenticated).to.equal(true);",
+                  "  pm.expect(body.apiKey).to.equal('query-key-123');",
+                  "  pm.expect(body.location).to.equal('query');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "API Key — X-API-Key header",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                {
+                  "key": "key",
+                  "value": "X-API-Key",
+                  "type": "string"
+                },
+                {
+                  "key": "value",
+                  "value": "header-key-456",
+                  "type": "string"
+                },
+                {
+                  "key": "in",
+                  "value": "header",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/api-key"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('API key via header', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.authenticated).to.equal(true);",
+                  "  pm.expect(body.apiKey).to.equal('header-key-456');",
+                  "  pm.expect(body.location).to.equal('header');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Digest Auth",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "digest",
+              "digest": [
+                {
+                  "key": "username",
+                  "value": "testuser",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "testpass",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/digest/testuser/testpass"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Digest authenticated', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.authenticated).to.equal(true);",
+                  "  pm.expect(body.user).to.equal('testuser');",
+                  "  pm.expect(body.type).to.equal('digest');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "OAuth2 Authorize — 302 带 mock code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/oauth2/authorize?client_id=test-client&redirect_uri=http://localhost/callback&response_type=code",
+            "protocolProfileBehavior": {
+              "followRedirects": false
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "pm.test('Location carries mock code', () => {",
+                  "  const loc = pm.response.headers.get('Location') || '';",
+                  "  pm.expect(loc).to.include('http://localhost/callback');",
+                  "  pm.expect(loc).to.include('code=mock_auth_code_');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "OAuth2 Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code"
+                },
+                {
+                  "key": "code",
+                  "value": "mock_auth_code_123"
+                },
+                {
+                  "key": "client_id",
+                  "value": "test-client"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "test-secret"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "http://localhost/callback"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/auth/oauth2/token"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('access_token issued', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.access_token).to.be.a('string').and.to.include('mock_access_token_');",
+                  "  pm.expect(body.token_type).to.equal('Bearer');",
+                  "  pm.expect(body.expires_in).to.equal(3600);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Postman-echo Basic Auth",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "user",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "pass",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/basic-auth"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('authenticated is true', () => {",
+                  "  pm.expect(pm.response.json().authenticated).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Postman-echo Digest Auth — 无凭据返回 401 challenge",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/digest-auth"
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 (challenge)', () => pm.response.to.have.status(401));",
+                  "pm.test('WWW-Authenticate challenge present', () => {",
+                  "  const h = pm.response.headers.get('WWW-Authenticate') || '';",
+                  "  pm.expect(h.toLowerCase()).to.include('digest');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Hawk Auth（mock 兼容）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/auth/hawk"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Hawk success', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.equal('success');",
+                  "  pm.expect(body.message).to.include('Hawk');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "OAuth1（mock 兼容）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/oauth1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('OAuth1 pass', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.equal('pass');",
+                  "  pm.expect(body.message).to.include('OAuth-1.0a');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Body Types",
+      "item": [
+        {
+          "name": "JSON Body — 必填字段齐全",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"Rabbit\",\"email\":\"rabbit@example.com\"}"
+            },
+            "url": "{{baseUrl}}/body/json"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('valid json body', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.equal(true);",
+                  "  pm.expect(body.data.name).to.equal('Rabbit');",
+                  "  pm.expect(body.data.email).to.equal('rabbit@example.com');",
+                  "  pm.expect(body.type).to.equal('json');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "JSON Body — 缺必填字段",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": "{{baseUrl}}/body/json"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('invalid with missing fields', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.equal(false);",
+                  "  pm.expect(body.missing).to.include('name');",
+                  "  pm.expect(body.missing).to.include('email');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Form urlencoded",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "rabbit"
+                },
+                {
+                  "key": "password",
+                  "value": "carrot"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/body/form"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('form parsed', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.equal(true);",
+                  "  pm.expect(body.form.username).to.equal('rabbit');",
+                  "  pm.expect(body.form.password).to.equal('carrot');",
+                  "  pm.expect(body.type).to.equal('form');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Multipart form-data",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "field",
+                  "value": "multipart-value",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "value": "hello multipart file content",
+                  "type": "text",
+                  "contentType": "text/plain"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/body/multipart"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('multipart received', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.equal(true);",
+                  "  pm.expect(body.type).to.equal('multipart');",
+                  "  pm.expect(body.contentType).to.include('multipart/form-data');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "XML Body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/xml"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "<note><to>Rabbit</to><body>hello xml</body></note>"
+            },
+            "url": "{{baseUrl}}/body/xml"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('xml received', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.equal(true);",
+                  "  pm.expect(body.type).to.equal('xml');",
+                  "  pm.expect(body.received).to.include('<to>Rabbit</to>');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Text Body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "hello plain text"
+            },
+            "url": "{{baseUrl}}/body/text"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('text received', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.equal(true);",
+                  "  pm.expect(body.type).to.equal('text');",
+                  "  pm.expect(body.received).to.equal('hello plain text');",
+                  "  pm.expect(body.length).to.equal(16);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Binary Body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/octet-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "binary-payload-0123456789"
+            },
+            "url": "{{baseUrl}}/body/binary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('binary received', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.valid).to.equal(true);",
+                  "  pm.expect(body.type).to.equal('binary');",
+                  "  pm.expect(body.size).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GraphQL Body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"{ user(id: 2) { id name } }\"}"
+            },
+            "url": "{{baseUrl}}/body/graphql"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('graphql executed', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.data.user.name).to.equal('Mock User');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Any Body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "any kind of body"
+            },
+            "url": "{{baseUrl}}/body/any"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('any body echoed', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.type).to.equal('text');",
+                  "  pm.expect(body.body).to.equal('any kind of body');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Status Codes",
+      "item": [
+        {
+          "name": "Status 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/200"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 201",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/201"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 202",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/202"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 202', () => pm.response.to.have.status(202));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 204",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/204"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 204', () => pm.response.to.have.status(204));",
+                  "pm.test('Body is empty', () => pm.expect(pm.response.text()).to.equal(''));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 301（不跟随重定向）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/301",
+            "protocolProfileBehavior": {
+              "followRedirects": false
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 301', () => pm.response.to.have.status(301));",
+                  "pm.test('Location points to /status/200', () => {",
+                  "  pm.expect(pm.response.headers.get('Location') || '').to.include('/status/200');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 302（不跟随重定向）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/302",
+            "protocolProfileBehavior": {
+              "followRedirects": false
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "pm.test('Location points to /status/200', () => {",
+                  "  pm.expect(pm.response.headers.get('Location') || '').to.include('/status/200');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/400"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 401（带 WWW-Authenticate）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/401"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('WWW-Authenticate header present', () => {",
+                  "  pm.expect(pm.response.headers.get('WWW-Authenticate') || '').to.include('Bearer');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/403"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/404"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 418",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/418"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 418 (teapot)', () => pm.response.to.have.status(418));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 422",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/422"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 429（带 Retry-After）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/429"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 429', () => pm.response.to.have.status(429));",
+                  "pm.test('Retry-After header present', () => {",
+                  "  pm.expect(pm.response.headers.get('Retry-After')).to.not.be.null;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 500",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/500"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 500', () => pm.response.to.have.status(500));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 502",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/502"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 502', () => pm.response.to.have.status(502));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status 503",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/status/503"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 503', () => pm.response.to.have.status(503));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Advanced",
+      "item": [
+        {
+          "name": "Delay 0.1s",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/advanced/delay/0.1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('delayed field echoed', () => {",
+                  "  pm.expect(pm.response.json().delayed).to.equal(0.1);",
+                  "});",
+                  "pm.test('response took >= 100ms', () => {",
+                  "  pm.expect(pm.response.responseTime).to.be.at.least(100);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Redirect /2（跟随到 /0）",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/advanced/redirect/2"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Final status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Advanced Cookies — 读取请求 Cookie",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "session=abc123"
+              }
+            ],
+            "url": "{{baseUrl}}/advanced/cookies"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('cookie received', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.received.session).to.equal('abc123');",
+                  "  pm.expect(body.count).to.be.at.least(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Advanced Set-Cookie",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/advanced/set-cookie?name=test&value=123&Path=/"
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Set-Cookie header set', () => {",
+                  "  pm.expect(pm.response.headers.get('Set-Cookie') || '').to.include('test=123');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Cookies — 读取",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "k1=v1"
+              }
+            ],
+            "url": "{{baseUrl}}/cookies"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('cookies parsed', () => {",
+                  "  pm.expect(pm.response.json().cookies.k1).to.equal('v1');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Cookies Set",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/cookies/set?k1=v1"
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Set-Cookie k1=v1', () => {",
+                  "  pm.expect(pm.response.headers.get('Set-Cookie') || '').to.include('k1=v1');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Cookies Delete",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/cookies/delete?k1="
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('cookie expired via Set-Cookie', () => {",
+                  "  const sc = pm.response.headers.get('Set-Cookie') || '';",
+                  "  pm.expect(sc).to.include('k1=');",
+                  "  pm.expect(sc).to.include('Expires=Thu, 01 Jan 1970');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Large Response 1024B",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/advanced/large/1024"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('body size is 1024 bytes', () => {",
+                  "  pm.expect(pm.response.text().length).to.equal(1024);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Binary 1x1 PNG",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/advanced/binary"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Content-Type is image/png', () => {",
+                  "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('image/png');",
+                  "});",
+                  "pm.test('response body non-empty', () => {",
+                  "  pm.expect(pm.response.stream ? pm.response.stream.length : 1).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Custom Response Headers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/advanced/response-headers?X-Custom=value1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('X-Custom response header echoed', () => {",
+                  "  pm.expect(pm.response.headers.get('X-Custom')).to.equal('value1');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Cache Control 60s",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/advanced/cache/60"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Cache-Control max-age=60', () => {",
+                  "  pm.expect(pm.response.headers.get('Cache-Control') || '').to.include('max-age=60');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Conditional — 200 with ETag",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/advanced/conditional"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ETag header present', () => {",
+                  "  pm.expect(pm.response.headers.get('ETag')).to.equal('\"mock-etag-v1\"');",
+                  "});",
+                  "pm.test('body reports modified', () => {",
+                  "  pm.expect(pm.response.json().modified).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Conditional — If-None-Match 返回 304",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "If-None-Match",
+                "value": "\"mock-etag-v1\""
+              }
+            ],
+            "url": "{{baseUrl}}/advanced/conditional"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 304', () => pm.response.to.have.status(304));"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Stream 3 chunks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/advanced/stream/3"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('3 chunks streamed', () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.include('Chunk 1/3');",
+                  "  pm.expect(text).to.include('Chunk 2/3');",
+                  "  pm.expect(text).to.include('Chunk 3/3');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Gzip",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/gzip"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('gzipped flag true', () => {",
+                  "  pm.expect(pm.response.json().gzipped).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Deflate",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/deflate"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('deflated flag true', () => {",
+                  "  pm.expect(pm.response.json().deflated).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "UTF-8 Encoding",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/encoding/utf8"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('UTF-8 content present', () => {",
+                  "  pm.expect(pm.response.text()).to.include('你好，世界！');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "IP",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/ip"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ip field present', () => {",
+                  "  pm.expect(pm.response.json().ip).to.be.a('string').and.to.not.be.empty;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Headers Echo",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Test-Header",
+                "value": "headers-test"
+              }
+            ],
+            "url": "{{baseUrl}}/headers"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('custom header echoed', () => {",
+                  "  pm.expect(pm.response.json().headers['x-test-header']).to.equal('headers-test');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Server Events GET /2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/server-events/2"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('2 SSE frames received', () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.include('\"count\": 1');",
+                  "  pm.expect(text).to.include('\"count\": 2');",
+                  "  pm.expect(text).to.include('\"total\": 2');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Server Events POST /2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "trigger",
+                  "value": "go"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/server-events/2"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('2 SSE frames received', () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.include('\"count\": 1');",
+                  "  pm.expect(text).to.include('\"total\": 2');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Time Now",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/time/now"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('returns a GMT date string', () => {",
+                  "  pm.expect(pm.response.text()).to.include('GMT');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Time Valid — ISO 时间戳",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/time/valid?timestamp=2026-08-09T15:00:00Z"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ISO timestamp is valid', () => {",
+                  "  pm.expect(pm.response.json().valid).to.equal(true);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "SSE",
+      "item": [
+        {
+          "name": "SSE Finite — 3 帧后结束",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/sse/finite"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('all 3 frames received', () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.include('id: 1');",
+                  "  pm.expect(text).to.include('id: 2');",
+                  "  pm.expect(text).to.include('id: 3');",
+                  "});",
+                  "pm.test('done event terminates stream', () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.include('event: done');",
+                  "  pm.expect(text).to.include('data: finished');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "GraphQL",
+      "item": [
+        {
+          "name": "hello（带变量）",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"query hello($name: String) { hello(name: $name) }\",\"variables\":{\"name\":\"Postman\"}}"
+            },
+            "url": "{{baseUrl}}/graphql"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('hello resolves with variable', () => {",
+                  "  pm.expect(pm.response.json().data.hello).to.equal('Hello, Postman!');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "user(id: 1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"{ user(id: 1) { id name } }\"}"
+            },
+            "url": "{{baseUrl}}/graphql"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('user 1 is Alice', () => {",
+                  "  const user = pm.response.json().data.user;",
+                  "  pm.expect(user.id).to.equal('1');",
+                  "  pm.expect(user.name).to.equal('Alice');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "mutation echo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"mutation { echo(text: \\\"hello\\\") }\"}"
+            },
+            "url": "{{baseUrl}}/graphql"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('echo mutation returns text', () => {",
+                  "  pm.expect(pm.response.json().data.echo).to.equal('hello');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Introspection — schema types",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"query\":\"{ __schema { queryType { name } mutationType { name } } }\"}"
+            },
+            "url": "{{baseUrl}}/graphql"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('schema has Query and Mutation', () => {",
+                  "  const schema = pm.response.json().data.__schema;",
+                  "  pm.expect(schema.queryType.name).to.equal('Query');",
+                  "  pm.expect(schema.mutationType.name).to.equal('Mutation');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MCP",
+      "item": [
+        {
+          "name": "initialize",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"postman-cli\",\"version\":\"1.0\"}}}"
+            },
+            "url": "{{baseUrl}}/mcp"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('SSE response contains serverInfo', () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.include('\"serverInfo\"');",
+                  "  pm.expect(text).to.include('rabbitpost-mock-mcp');",
+                  "  pm.expect(text).to.include('\"protocolVersion\":\"2025-03-26\"');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "tools/list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}"
+            },
+            "url": "{{baseUrl}}/mcp"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('echo tool listed', () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.include('\"tools\"');",
+                  "  pm.expect(text).to.include('\"name\":\"echo\"');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "tools/call — echo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"echo\",\"arguments\":{\"text\":\"hi\"}}}"
+            },
+            "url": "{{baseUrl}}/mcp"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('echo tool returns echo: hi', () => {",
+                  "  pm.expect(pm.response.text()).to.include('echo: hi');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "resources/read — memo://notes",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"resources/read\",\"params\":{\"uri\":\"memo://notes\"}}"
+            },
+            "url": "{{baseUrl}}/mcp"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('memo notes resource returned', () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text).to.include('memo://notes');",
+                  "  pm.expect(text).to.include('mock memo notes');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "prompts/get — greet",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"prompts/get\",\"params\":{\"name\":\"greet\",\"arguments\":{\"name\":\"Postman\"}}}"
+            },
+            "url": "{{baseUrl}}/mcp"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('greet prompt rendered', () => {",
+                  "  pm.expect(pm.response.text()).to.include('hello Postman');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RabbitPost 系统架构图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #0a0e1a;
+    color: #e0e6f0;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+  h1 {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #ff6c37, #ff9a6c);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .subtitle {
+    text-align: center;
+    color: #7a8aad;
+    font-size: 14px;
+    margin-bottom: 40px;
+  }
+
+  /* ===== 架构图主区域 ===== */
+  .arch-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+  }
+
+  /* ===== 层 ===== */
+  .layer {
+    position: relative;
+    padding: 24px 32px;
+    border-radius: 12px;
+    margin-bottom: 8px;
+  }
+  .layer-label {
+    position: absolute;
+    top: -10px;
+    left: 24px;
+    background: #0a0e1a;
+    padding: 2px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    border-radius: 4px;
+  }
+
+  .layer-client {
+    background: rgba(255, 108, 55, 0.06);
+    border: 1px solid rgba(255, 108, 55, 0.15);
+  }
+  .layer-client .layer-label { color: #ff6c37; border: 1px solid rgba(255, 108, 55, 0.3); }
+
+  .layer-gateway {
+    background: rgba(99, 102, 241, 0.06);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+  }
+  .layer-gateway .layer-label { color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+
+  .layer-runner {
+    background: rgba(34, 197, 94, 0.06);
+    border: 1px solid rgba(34, 197, 94, 0.15);
+  }
+  .layer-runner .layer-label { color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+
+  .layer-target {
+    background: rgba(168, 85, 247, 0.06);
+    border: 1px solid rgba(168, 85, 247, 0.15);
+  }
+  .layer-target .layer-label { color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+
+  .layer-data {
+    background: rgba(234, 179, 8, 0.06);
+    border: 1px solid rgba(234, 179, 8, 0.15);
+  }
+  .layer-data .layer-label { color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3); }
+
+  /* ===== 组件块 ===== */
+  .components {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .component {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 16px 20px;
+    min-width: 200px;
+    max-width: 320px;
+    flex: 1;
+    transition: all 0.2s;
+  }
+  .component:hover {
+    border-color: rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.06);
+  }
+  .component-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .component-subtitle {
+    font-size: 11px;
+    color: #7a8aad;
+    margin-bottom: 8px;
+  }
+  .component-detail {
+    font-size: 12px;
+    color: #a0aec0;
+    line-height: 1.6;
+  }
+  .component-detail code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: "SF Mono", Monaco, monospace;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .badge-rust { background: rgba(222, 165, 32, 0.2); color: #f0c040; }
+  .badge-ts { background: rgba(49, 120, 198, 0.2); color: #6cb6ff; }
+  .badge-react { background: rgba(97, 218, 251, 0.15); color: #61dafb; }
+  .badge-next { background: rgba(255,255,255,0.1); color: #e0e0e0; }
+  .badge-tauri { background: rgba(255, 182, 30, 0.15); color: #ffc131; }
+
+  /* ===== 连接线 ===== */
+  .connector {
+    display: flex;
+    justify-content: center;
+    padding: 4px 0;
+    position: relative;
+  }
+  .connector-line {
+    width: 2px;
+    height: 32px;
+    position: relative;
+  }
+  .connector-line::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 100%;
+    border-radius: 1px;
+  }
+  .connector-line::after {
+    content: '▼';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 8px;
+  }
+  .conn-http::before { background: #ff6c37; }
+  .conn-http::after { color: #ff6c37; }
+  .conn-rt::before { background: #818cf8; }
+  .conn-rt::after { color: #818cf8; }
+  .conn-ndjson::before { background: #4ade80; }
+  .conn-ndjson::after { color: #4ade80; }
+  .conn-db::before { background: #facc15; }
+  .conn-db::after { color: #facc15; }
+  .conn-target::before { background: #c084fc; }
+  .conn-target::after { color: #c084fc; }
+
+  .connector-label {
+    position: absolute;
+    right: calc(50% + 20px);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: #5a6a8a;
+    white-space: nowrap;
+    background: #0a0e1a;
+    padding: 2px 8px;
+    border-radius: 3px;
+  }
+
+  /* ===== 协议分类说明 ===== */
+  .protocol-section {
+    margin-top: 48px;
+  }
+  .section-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .protocol-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 900px) {
+    .protocol-grid { grid-template-columns: 1fr; }
+  }
+
+  .protocol-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .protocol-card-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .protocol-card-desc {
+    font-size: 12px;
+    color: #7a8aad;
+    margin-bottom: 16px;
+  }
+
+  .flow-list {
+    list-style: none;
+    padding: 0;
+  }
+  .flow-list li {
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .flow-list li:last-child { margin-bottom: 0; }
+
+  .flow-step {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 1px;
+  }
+
+  .flow-http li { background: rgba(255, 108, 55, 0.06); }
+  .flow-http .flow-step { background: rgba(255, 108, 55, 0.2); color: #ff6c37; }
+
+  .flow-rt li { background: rgba(99, 102, 241, 0.06); }
+  .flow-rt .flow-step { background: rgba(99, 102, 241, 0.2); color: #818cf8; }
+
+  .protocol-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .protocol-tag {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .tag-http { background: rgba(255, 108, 55, 0.15); color: #ff6c37; }
+  .tag-graphql { background: rgba(229, 53, 171, 0.15); color: #e535ab; }
+  .tag-ai { background: rgba(16, 163, 127, 0.15); color: #10a37f; }
+  .tag-ws { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
+  .tag-sio { background: rgba(1, 1, 1, 0.3); color: #e0e0e0; }
+  .tag-mqtt { background: rgba(102, 1, 143, 0.15); color: #c084fc; }
+  .tag-sse { background: rgba(234, 179, 8, 0.15); color: #facc15; }
+  .tag-mcp { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+  .tag-grpc { background: rgba(36, 130, 190, 0.15); color: #6cb6ff; }
+  .tag-gqlsub { background: rgba(229, 53, 171, 0.1); color: #f0c; }
+
+  /* ===== Runner 选择策略 ===== */
+  .runner-strategy {
+    margin-top: 48px;
+  }
+  .strategy-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+  .strategy-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 20px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .strategy-priority {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .priority-1 { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
+  .priority-2 { background: rgba(234, 179, 8, 0.2); color: #facc15; }
+  .priority-3 { background: rgba(255, 108, 55, 0.2); color: #ff6c37; }
+  .priority-fallback { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+  .strategy-text { font-size: 13px; line-height: 1.5; }
+  .strategy-text strong { display: block; margin-bottom: 2px; }
+  .strategy-text span { color: #7a8aad; font-size: 12px; }
+
+  .strategy-arrow {
+    text-align: center;
+    color: #3a4a6a;
+    font-size: 16px;
+    padding: 0;
+  }
+
+  /* ===== 数据存储 ===== */
+  .storage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .storage-item {
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px;
+  }
+  .storage-item strong { display: block; margin-bottom: 4px; color: #facc15; }
+  .storage-item span { color: #7a8aad; }
+
+  /* ===== 底部说明 ===== */
+  .footer-note {
+    margin-top: 48px;
+    padding: 20px;
+    border-radius: 10px;
+    background: rgba(255, 108, 55, 0.04);
+    border: 1px solid rgba(255, 108, 55, 0.1);
+    font-size: 13px;
+    line-height: 1.7;
+    color: #a0aec0;
+  }
+  .footer-note strong { color: #ff6c37; }
+
+  @media print {
+    body { background: #fff; color: #1a1a2e; padding: 20px; }
+    .layer { border-color: #ddd; background: #f8f9fa; }
+    .component { background: #fff; border-color: #ddd; }
+    .component-detail { color: #555; }
+    .component-detail code { background: #f0f0f0; }
+    .layer-label { background: #fff; }
+    .protocol-card { background: #f8f9fa; border-color: #ddd; }
+    .flow-list li { background: rgba(0,0,0,0.03); }
+    .strategy-item { background: #f8f9fa; border-color: #ddd; }
+    .storage-item { background: #f8f9fa; border-color: #ddd; }
+    .footer-note { background: #fff8f5; border-color: #ffe0d0; color: #555; }
+    .connector-label { background: #fff; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>RabbitPost 系统架构</h1>
+<p class="subtitle">API 开发协作平台 &mdash; 请求执行链路与多协议架构全景</p>
+
+<!-- ==================== 架构图 ==================== -->
+<div class="arch-diagram">
+
+  <!-- 客户端层 -->
+  <div class="layer layer-client">
+    <div class="layer-label">Client</div>
+    <div class="components">
+      <div class="component">
+        <div class="component-title">
+          Web 浏览器
+          <span class="badge badge-react">React</span>
+        </div>
+        <div class="component-subtitle">apps/web &mdash; Vite + React + Ant Design</div>
+        <div class="component-detail">
+          请求编辑器、Collection 树、环境变量、响应查看器、Runs 面板。
+          通过 <code>fetch</code> 调 API，长连接协议通过 <code>EventSource(SSE)</code> + <code>POST</code> 与实时桥通信。
+        </div>
+      </div>
+      <div class="component">
+        <div class="component-title">
+          桌面应用
+          <span class="badge badge-tauri">Tauri</span>
+        </div>
+        <div class="component-subtitle">apps/desktop &mdash; Tauri 2 + 内嵌 local-agent</div>
+        <div class="component-detail">
+          内嵌 Runner 二进制的 local-agent 模式（<code>127.0.0.1</code>），
+          HTTP 执行与长连接协议均可<strong>完全本机化</strong>，不依赖远端服务器。
+        </div>
+      </div>
+      <div class="component">
+        <div class="component-title">
+          CLI 工具
+          <span class="badge badge-rust">Rust</span>
+        </div>
+        <div class="component-subtitle">apps/cli &mdash; rabbitpost CLI</div>
+        <div class="component-detail">
+          Collection/环境 CRUD、本机执行用例（<code>rp-core</code> 引擎）、
+          生成 JSON/HTML/JUnit 报告并上传到 API。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 连接：客户端 → API -->
+  <div class="connector">
+    <div class="connector-line conn-http"></div>
+    <div class="connector-label">HTTP REST / SSE</div>
+  </div>
+
+  <!-- API 网关层 -->
+  <div class="layer layer-gateway">
+    <div class="layer-label">API Gateway</div>
+    <div class="components">
+      <div class="component" style="max-width: 100%;">
+        <div class="component-title">
+          Next.js API 服务
+          <span class="badge badge-next">Next.js</span>
+        </div>
+        <div class="component-subtitle">apps/api &mdash; 主 API 服务（认证 / 授权 / 数据持久化 / 任务调度）</div>
+        <div class="component-detail" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px;">
+          <div>
+            <strong style="color: #ff6c37;">一次性请求执行</strong><br>
+            <code>POST /api/v1/execute</code><br>
+            支持协议：HTTP、GraphQL、AI<br>
+            路径 A：派发给 Runner 执行（默认）<br>
+            路径 B：服务端直接执行（回退）
+          </div>
+          <div>
+            <strong style="color: #818cf8;">实时协议桥（rt session）</strong><br>
+            <code>POST /api/v1/rt/sessions</code><br>
+            <code>GET /api/v1/rt/sessions/:id/events</code> (SSE)<br>
+            <code>POST /api/v1/rt/sessions/:id/send</code><br>
+            支持：WS / SocketIO / MQTT / MCP / gRPC / SSE / GQL-Sub
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 连接：API → Runner -->
+  <div class="connector">
+    <div class="connector-line conn-ndjson"></div>
+    <div class="connector-label">NDJSON downlink / HTTP 轮询</div>
+  </div>
+
+  <!-- Runner 层 -->
+  <div class="layer layer-runner">
+    <div class="layer-label">Runner</div>
+    <div class="components">
+      <div class="component">
+        <div class="component-title">
+          内嵌 Runner
+          <span class="badge badge-rust">Rust</span>
+        </div>
+        <div class="component-subtitle">随 API 服务自动启停（__embedded__）</div>
+        <div class="component-detail">
+          开发环境默认。API 启动时自动 spawn Runner 子进程，
+          注册到平台并建立 rt link。二进制缺失时降级为服务端直接执行。
+        </div>
+      </div>
+      <div class="component">
+        <div class="component-title">
+          外部 Runner
+          <span class="badge badge-rust">Rust</span>
+        </div>
+        <div class="component-subtitle">独立部署的 Runner 进程</div>
+        <div class="component-detail">
+          可部署到内网/远程环境，通过 Token 注册到平台。
+          优先于内嵌 Runner 被选中（<code>selectRunnerForJob</code>）。
+          支持并发执行（<code>--concurrency N</code>）。
+        </div>
+      </div>
+      <div class="component">
+        <div class="component-title">
+          桌面 local-agent
+          <span class="badge badge-tauri">Tauri</span>
+        </div>
+        <div class="component-subtitle">桌面应用内嵌的本地执行代理</div>
+        <div class="component-detail">
+          不注册、不连服务器。在 <code>127.0.0.1</code> 起 HTTP 服务，
+          镜像 API 端点契约，桌面模式下前端直接调用。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 连接：Runner → 目标 -->
+  <div class="connector">
+    <div class="connector-line conn-target"></div>
+    <div class="connector-label">实际网络请求</div>
+  </div>
+
+  <!-- 目标服务层 -->
+  <div class="layer layer-target">
+    <div class="layer-label">Target Services</div>
+    <div class="components">
+      <div class="component" style="max-width: 100%;">
+        <div class="component-detail" style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">
+          <span class="protocol-tag tag-http">HTTP / REST</span>
+          <span class="protocol-tag tag-graphql">GraphQL</span>
+          <span class="protocol-tag tag-ai">AI</span>
+          <span class="protocol-tag tag-ws">WebSocket</span>
+          <span class="protocol-tag tag-sio">Socket.IO</span>
+          <span class="protocol-tag tag-mqtt">MQTT</span>
+          <span class="protocol-tag tag-sse">SSE</span>
+          <span class="protocol-tag tag-mcp">MCP</span>
+          <span class="protocol-tag tag-grpc">gRPC</span>
+          <span class="protocol-tag tag-gqlsub">GraphQL Subscription</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 连接：API → DB -->
+  <div class="connector">
+    <div class="connector-line conn-db"></div>
+    <div class="connector-label">Drizzle ORM</div>
+  </div>
+
+  <!-- 数据层 -->
+  <div class="layer layer-data">
+    <div class="layer-label">Data</div>
+    <div class="components">
+      <div class="component" style="max-width: 100%;">
+        <div class="component-title">
+          PostgreSQL
+          <span class="badge badge-ts">Drizzle ORM</span>
+        </div>
+        <div class="component-subtitle">持久化存储</div>
+        <div class="storage-grid">
+          <div class="storage-item"><strong>teams / workspaces</strong><span>团队与工作空间</span></div>
+          <div class="storage-item"><strong>collections / items</strong><span>Collection 树（folder/request）</span></div>
+          <div class="storage-item"><strong>environments</strong><span>环境变量（含 secret）</span></div>
+          <div class="storage-item"><strong>histories</strong><span>请求历史（含响应摘要）</span></div>
+          <div class="storage-item"><strong>run_jobs / results</strong><span>执行任务与逐请求结果</span></div>
+          <div class="storage-item"><strong>runners</strong><span>Runner 注册与心跳</span></div>
+          <div class="storage-item"><strong>request_cases</strong><span>接口用例</span></div>
+          <div class="storage-item"><strong>specs / documents</strong><span>API 规格与文档</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ==================== 协议执行链路对比 ==================== -->
+<div class="protocol-section">
+  <h2 class="section-title">协议执行链路对比</h2>
+
+  <div class="protocol-grid">
+    <!-- 一次性请求 -->
+    <div class="protocol-card">
+      <div class="protocol-card-title">
+        一次性请求（Request-Response）
+      </div>
+      <div class="protocol-card-desc">
+        适用于 HTTP、GraphQL (Query/Mutation)、AI 协议 &mdash; 走 <code>POST /api/v1/execute</code>
+      </div>
+      <ul class="flow-list flow-http">
+        <li>
+          <span class="flow-step">1</span>
+          <span><strong>浏览器</strong> 发送请求配置到 <code>POST /api/v1/execute</code></span>
+        </li>
+        <li>
+          <span class="flow-step">2</span>
+          <span><strong>API</strong> 校验协议类型（仅允许 http/graphql/ai），鉴权，检查 Runner 可用性</span>
+        </li>
+        <li>
+          <span class="flow-step">3</span>
+          <span><strong>API → Runner</strong> 创建 run_job，Runner 轮询领取任务（或通过内嵌 Runner 直接派发）</span>
+        </li>
+        <li>
+          <span class="flow-step">4</span>
+          <span><strong>Runner</strong> 执行：变量替换 → pre-request 脚本 → 发送 HTTP 请求 → test 脚本 → 采集结果</span>
+        </li>
+        <li>
+          <span class="flow-step">5</span>
+          <span><strong>Runner → API</strong> 上报执行结果（run_job_result）</span>
+        </li>
+        <li>
+          <span class="flow-step">6</span>
+          <span><strong>API</strong> 写入 histories 表，返回 ExecuteResult 给浏览器</span>
+        </li>
+      </ul>
+      <div class="protocol-tags">
+        <span class="protocol-tag tag-http">HTTP</span>
+        <span class="protocol-tag tag-graphql">GraphQL</span>
+        <span class="protocol-tag tag-ai">AI</span>
+      </div>
+    </div>
+
+    <!-- 长连接协议 -->
+    <div class="protocol-card">
+      <div class="protocol-card-title">
+        长连接协议（Realtime Session）
+      </div>
+      <div class="protocol-card-desc">
+        适用于 WebSocket、Socket.IO、MQTT、MCP、gRPC、SSE、GraphQL Subscription &mdash; 走 <code>/api/v1/rt/sessions</code>
+      </div>
+      <ul class="flow-list flow-rt">
+        <li>
+          <span class="flow-step">1</span>
+          <span><strong>浏览器</strong> <code>POST /api/v1/rt/sessions</code> 创建会话（protocol + url + config）</span>
+        </li>
+        <li>
+          <span class="flow-step">2</span>
+          <span><strong>API</strong> 选择持有 rt link 的 Runner，通过 NDJSON downlink 发送 <code>start</code> 指令</span>
+        </li>
+        <li>
+          <span class="flow-step">3</span>
+          <span><strong>Runner</strong> 建立到目标服务的协议连接（WS/MQTT/gRPC/...），事件通过 <code>POST /runner/rt/event</code> 回传</span>
+        </li>
+        <li>
+          <span class="flow-step">4</span>
+          <span><strong>API → 浏览器</strong> 事件经 SSE 推送（<code>EventSource</code>），含 status/message/error 帧</span>
+        </li>
+        <li>
+          <span class="flow-step">5</span>
+          <span><strong>浏览器 → Runner</strong> 发送消息：<code>POST /rt/sessions/:id/send</code> → NDJSON downlink → Runner 转发到目标</span>
+        </li>
+        <li>
+          <span class="flow-step">6</span>
+          <span><strong>关闭</strong>：<code>DELETE /rt/sessions/:id</code> → NDJSON <code>close</code> 指令 → Runner 断开目标连接</span>
+        </li>
+      </ul>
+      <div class="protocol-tags">
+        <span class="protocol-tag tag-ws">WebSocket</span>
+        <span class="protocol-tag tag-sio">Socket.IO</span>
+        <span class="protocol-tag tag-mqtt">MQTT</span>
+        <span class="protocol-tag tag-sse">SSE</span>
+        <span class="protocol-tag tag-mcp">MCP</span>
+        <span class="protocol-tag tag-grpc">gRPC</span>
+        <span class="protocol-tag tag-gqlsub">GQL Subscription</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== Runner 选择策略 ==================== -->
+<div class="runner-strategy">
+  <h2 class="section-title">Runner 选择策略（一次性请求）</h2>
+  <div class="strategy-flow">
+    <div class="strategy-item">
+      <div class="strategy-priority priority-1">1</div>
+      <div class="strategy-text">
+        <strong>外部在线 Runner（优先）</strong>
+        <span>团队内 status=active 且 90 秒内有心跳的外部 Runner，按 lastSeenAt 降序选最新</span>
+      </div>
+    </div>
+    <div class="strategy-arrow">↓ 无可用外部 Runner</div>
+    <div class="strategy-item">
+      <div class="strategy-priority priority-2">2</div>
+      <div class="strategy-text">
+        <strong>内嵌 Runner</strong>
+        <span>随 API 服务启动的 __embedded__ Runner，需已 spawn 且心跳在线（冷启动窗口内不可用）</span>
+      </div>
+    </div>
+    <div class="strategy-arrow">↓ 内嵌 Runner 也不可用</div>
+    <div class="strategy-item">
+      <div class="strategy-priority priority-3">3</div>
+      <div class="strategy-text">
+        <strong>团队内其他在线 Runner</strong>
+        <span>任何 status=active 且心跳在线的 Runner（兜底）</span>
+      </div>
+    </div>
+    <div class="strategy-arrow">↓ 全部不可用</div>
+    <div class="strategy-item">
+      <div class="strategy-priority priority-fallback">F</div>
+      <div class="strategy-text">
+        <strong>服务端直接执行（回退）</strong>
+        <span>executor.ts 在 API 进程内直接执行 HTTP 请求（node:vm 跑脚本），不经过 Runner</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 关键设计说明 ==================== -->
+<div class="footer-note">
+  <strong>关键设计要点：</strong><br>
+  &bull; <strong>HTTP 请求不是直接打到 Runner 的</strong>。浏览器始终调用 <code>POST /api/v1/execute</code>，由 API 服务决定走 Runner 派发还是服务端直接执行。Runner 模式下 API 创建 run_job 并同步等待结果（<code>dispatchAndWait</code>，60s 超时轮询）。<br><br>
+  &bull; <strong>长连接协议走完全不同的链路</strong>。<code>/api/v1/execute</code> 会明确拒绝非 http/graphql/ai 协议（返回 400 UNSUPPORTED_PROTOCOL）。长连接协议使用 rt session 模型：浏览器 ⇄ SSE+POST ⇄ API 实时桥 ⇄ NDJSON downlink ⇄ Runner ⇄ 目标服务。浏览器不直连目标，无 CORS/混合内容限制。<br><br>
+  &bull; <strong>桌面模式</strong>下 local-agent 在 127.0.0.1 镜像 API 端点契约，HTTP 执行与长连接协议均可完全本机化，不经过远端服务器。<br><br>
+  &bull; <strong>Runner 与 API 的通信</strong>：Runner 主动轮询 <code>GET /runner/jobs/poll</code> 领取任务；rt 协议通过 <code>GET /runner/rt/link</code> 保持 NDJSON downlink 长连接接收指令，通过 <code>POST /runner/rt/event</code> 上行事件。<br><br>
+  &bull; <strong>脚本沙箱</strong>：API 侧用 <code>node:vm</code>，Runner/CLI 侧用 QuickJS，统一 <code>rp.*</code> API（<code>pm</code> 为兼容别名）。
+</div>
+
+</div>
+</body>
+</html>

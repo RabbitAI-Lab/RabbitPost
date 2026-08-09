@@ -9,7 +9,7 @@ Postman 风格的团队 API 协作平台（Monorepo）。
 | Monorepo | Nx + pnpm workspaces |
 | 前端 `apps/web` | React 19 + Vite + antd 5 + zustand |
 | 后端 `apps/api` | Next.js (Route Handlers) + Drizzle ORM（含实时桥：SSE 下行 + POST 上行） |
-| CLI `apps/cli` | Rust 单二进制 `rabbitpost`（接口 CRUD / 用例执行 / 报告上传） |
+| CLI `apps/cli` | Rust 单二进制 `rabbitpost`（资源 CRUD / 用例执行 / 报告上传 / lint / rt 会话） |
 | Runner `apps/runner` | Rust 常驻进程 `rabbitpost-runner`（派发任务 + 长连接协议客户端：WS/Socket.IO/MQTT/MCP/gRPC/SSE） |
 | 桌面端 `apps/desktop` | Tauri 2 壳（Win/macOS/Linux，WebView 加载远程 Web，前后端零改动） |
 | 共享库 `crates/rp-core` | Rust 执行引擎 + QuickJS 脚本沙箱（CLI 与 Runner 同源） |
@@ -50,7 +50,7 @@ RabbitPost/
 - **Scripts**：Pre-request 与 Tests 脚本（服务端 node:vm、CLI/Runner 内嵌 QuickJS，`rp.*` API + 极简 `rp.expect` 断言，`pm` 为兼容别名）
 - **History**：每次请求（含失败）自动落库，可回放为新草稿
 - **Runs**：派发任务（Runner 执行）与 CLI 本机执行统一落库，Collection 的 Runs tab 可查看记录与逐请求断言结果
-- **RabbitPost CLI**：接口/Collection/文件夹/环境增删改查（JSON 输出，面向 AI），本机执行用例，生成 JSON/HTML/JUnit 报告并上传
+- **RabbitPost CLI**：接口/Collection/文件夹/环境增删改查（JSON 输出，面向 AI），本机执行用例（Postman 文件直跑 / 迭代 / globals / Cookie Jar），生成 JSON/HTML/JUnit 报告并上传；另含 lint、团队/Workspace/组织/Runner/文档/Spec/场景管理与 rt 长连接会话
 - **错误透传**：上游/网络错误原文返回，不做封装改写
 
 ## 快速开始
@@ -111,6 +111,19 @@ pnpm cli:test     # CLI 测试（单元 + assert_cmd/wiremock 功能测试）
 - `apps/cli`：config/crud/report 单元测试 + `tests/e2e.rs` 功能套件（assert_cmd 跑真实二进制、wiremock 模拟服务端，覆盖 auth/CRUD/run/报告/上传/退出码与用例展开）
 - GitHub Actions：`runner-test.yml` / `cli-test.yml` 在相关路径变更时跑 cargo test + clippy（-D warnings）；`runner-release.yml` / `cli-release.yml` 发布预 编译包（`cli-release` 在 main 上 CLI 相关代码变更时自动触发并刷新 cli-latest，PR 只做跨平台构建验证）
 
+### Mock Server 测试 Collection
+
+`apps/mock-server` 的 Postman 全协议测试集（80 个请求：HTTP 方法 / Auth / Body 类型 / 状态码 / Advanced / SSE / GraphQL / MCP），源文件在
+`apps/mock-server/postman/rabbitpost-mock-server.postman_collection.json`，也已发布到 Postman 团队空间：
+[RabbitPost Mock Server — 全协议测试集](https://hualao.postman.co/workspace/RabbitPost~50d38754-d965-4224-be88-d133483f9852/collection/13766-5ed09162-dc33-408c-9ffd-1073961ed82d?action=share&creator=13766)
+
+```bash
+# 先启动 mock-server（apps/mock-server 下 pnpm run start），然后：
+postman collection run apps/mock-server/postman/rabbitpost-mock-server.postman_collection.json
+```
+
+WebSocket / Socket.IO / gRPC / MQTT 为长连接协议，无法用 Collection JSON 表达，连接参数见 Collection 描述。
+
 ## RabbitPost CLI
 
 `rabbitpost` 是本地/CI 用的 Rust 单二进制（与服务端 API Key 认证配合）。
@@ -139,12 +152,88 @@ rabbitpost request create --collection <COLLECTION_ID> --name "获取用户" --m
 rabbitpost request update <ITEM_ID> --data @request.json   # @文件 / - stdin / 字面量
 rabbitpost env update <ENV_ID> --set host=https://api.example.com
 
-# 4. 本机执行用例（含 rp.* 断言），生成报告并上传（Runs tab 可见）
+# 4. Collection 导入 / 导出（rabbitpost.collection 与 Postman v2.1 文件互认）
+rabbitpost collection export <COLLECTION_ID> --file backup.json
+rabbitpost collection import --workspace <WORKSPACE_ID> --file collection.json
+
+# 5. 本机执行用例（含 rp.* 断言），生成报告并上传（Runs tab 可见）
 rabbitpost run --collection <COLLECTION_ID> --env <ENV_ID> \
   --report json,html,junit --report-dir ./reports --upload
 
-# 退出码：0 全部通过 / 1 存在失败用例 / 2 操作错误（CI 可直接作门禁）
+# 离线执行（newman 用法）：直接跑本地 Collection 文件，环境也可用本地文件
+rabbitpost run --file collection.json --env-file env.json \
+  -d data.csv -n 3 --folder "用户模块" --env-var host=https://api.example.com
+
+# globals / 脚本变量回传 / Cookie 会话（跨请求共享，可导出）
+rabbitpost run --file collection.json --globals globals.json \
+  --export-environment env-out.json --export-globals globals-out.json \
+  --cookie-jar cookies.json --export-cookie-jar cookies-out.json
+
+# 静态检查（有 error 级 issue 时退出码 1，可直接做 CI 门禁）
+rabbitpost collection lint <COLLECTION_ID>          # 或 --file collection.json
+rabbitpost spec lint --file openapi.yaml            # 或 spec lint <SPEC_ID>
+
+# 执行记录与历史（服务端数据）
+rabbitpost runs list --collection <COLLECTION_ID>
+rabbitpost runs get <JOB_ID>
+rabbitpost runs report <JOB_ID> --format junit --file report.xml
+rabbitpost history list --workspace <WORKSPACE_ID>
+
+# 团队 / Workspace / 组织 / Runner / 文档 / Spec / 场景
+rabbitpost team create --name "后端组"
+rabbitpost team member-add <TEAM_ID> --email a@b.c --role viewer
+rabbitpost workspace create --team <TEAM_ID> --name "支付"
+rabbitpost org list
+rabbitpost runner create --team <TEAM_ID> --name ci-1      # 返回一次性明文 token（rpr_...）
+rabbitpost doc create --workspace <WORKSPACE_ID> --name "接入说明" --content @README.md
+rabbitpost spec create --workspace <WORKSPACE_ID> --name "订单 API" --type openapi-3.0 --content @openapi.yaml
+rabbitpost scenario steps <SCENARIO_ID>
+rabbitpost scenario step-add <SCENARIO_ID> --source-item <ITEM_ID>
+
+# 长连接协议（经 Runner 执行；事件以 JSON Lines 输出）
+rabbitpost rt --workspace <WORKSPACE_ID> --protocol websocket --url ws://localhost:8080/ws \
+  --send "ping" --listen 15
+
+# 退出码：0 全部通过 / 1 存在失败用例 / 2 操作错误（CI 可直接作门禁；-x 可强制恒 0）
 ```
+
+`rabbitpost run` 完整选项（对齐 Postman CLI / newman）：
+
+| 选项 | 说明 |
+| ---- | ---- |
+| `--collection` / `--request` / `--file` | 执行目标三选一：服务端 Collection / 单请求 / 本地 Collection 文件 |
+| `--env` / `--env-file` | 环境二选一：服务端环境 id / 本地环境文件（Postman 环境导出、RabbitPost 环境、扁平 kv 均可） |
+| `--globals <file>` | 本地 globals 文件（Postman globals 导出 / 扁平 kv），优先级最低 |
+| `--env-var KEY=VALUE` | 覆盖变量，可多次；优先级最高 |
+| `--global-var KEY=VALUE` | 全局变量（globals 作用域），可多次；替换优先级同 --env-var |
+| `--folder <名或路径>` | 只跑指定文件夹（名称或 "A / B" 路径），可多次 |
+| `-n, --iteration-count` | 迭代轮数 |
+| `-d, --iteration-data` | 迭代数据（JSON 对象数组或 CSV，首行表头），每行注入一轮变量 |
+| `--request-name <名>` | 只跑指定名称的请求（请求名，可多次；其用例一并执行） |
+| `--bail` | 首个失败即停（隐含顺序执行） |
+| `-x, --suppress-exit-code` | 用例失败退出码也为 0 |
+| `--delay-request <ms>` | 每个请求前的固定延迟 |
+| `--timeout-request <ms>` | 覆盖请求超时（0 为不超时） |
+| `--timeout-script <ms>` | 覆盖脚本超时（0/缺省为引擎默认 5s） |
+| `-k, --insecure` | 跳过 TLS 证书校验 |
+| `--silent` / `--verbose` | 不输出逐请求日志 / 输出逐请求详情（状态、响应头、响应体截断、断言明细） |
+| `--color auto/always/never` | 日志着色（默认按终端探测） |
+| `--working-dir <dir>` | 相对输入文件的解析基准目录 |
+| `--no-insecure-file-read` | 禁止读取工作目录之外的输入文件 |
+| `--cookie-jar <file>` | 加载 Cookie Jar（Postman cookie 导出 / 极简数组），run 内跨请求共享 |
+| `--export-cookie-jar <file>` | 运行结束导出 Cookie Jar |
+| `--export-environment <file>` | 导出最终环境变量（含 `rp.environment.set` 改动，Postman 环境格式） |
+| `--export-globals <file>` | 导出最终 globals（含 `rp.globals.set` 改动，Postman globals 格式） |
+| `--concurrency` | 并发数（默认 4；--bail 时忽略） |
+| `--report json,html,junit` / `--report-dir` | 本地报告 |
+| `--reporter-json-export <file>` 等 | 显式报告导出路径（json/html/junit 三个，与 --report 并存） |
+| `--upload` | 上传报告到 Runs tab（--file 离线运行时自动跳过） |
+
+变量优先级（低 → 高）：globals（--globals）< Collection 变量 < 环境（--env / --env-file）< 迭代数据行 < --env-var / --global-var。
+
+脚本改动传递：同一 run 内，`rp.environment.set` / `rp.variables.set` / `rp.globals.set` 的改动对后续请求可见（并发 >1 时按完成顺序合并，同键后完成者覆盖；需要严格顺序时用 `--concurrency 1`）。已知限制：沙箱的 `rp.environment` 作用域在执行替换时并入了 globals 与 Collection 变量，`rp.environment.get` 可能读到 globals 同名键；Cookie Jar 不跟随跨域重定向。
+
+`rabbitpost collection lint` 内置规则：`empty-name` / `empty-url` / `invalid-variable-syntax` / `unresolved-variable`（error/warning）与 `insecure-url` / `no-tests` / `duplicate-name`（warning）；`--env-file` / `--globals` 可补充可见变量。`rabbitpost spec lint` 规则与 Web 端 Issues 面板一致（Spectral 规则名，YAML/JSON 均可），差异：CLI 不输出行列号，以 path 定位。
 
 凭证解析优先级：`--server/--api-key` > `RABBITPOST_SERVER/RABBITPOST_API_KEY` > 配置文件。
 Runner（`rabbitpost-runner serve`）使用团队级 Runner Token（`rpr_...`），与 CLI 的个人 API Key 互不通用。

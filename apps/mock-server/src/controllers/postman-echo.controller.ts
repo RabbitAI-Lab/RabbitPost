@@ -300,12 +300,13 @@ export class PostmanEchoController {
   // ============ 编码/压缩 ============
 
   @Get('encoding/utf8')
-  encodingUtf8(@Req() req: Request, @Res() res: Response) {
-    // 必须移除 Content-Length 再设 Transfer-Encoding，否则报错
-    res.removeHeader('Content-Length');
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    res.set('Transfer-Encoding', 'chunked');
-    res.send('<html><body><h1>UTF-8 Encoded Response</h1><p>你好，世界！</p></body></html>');
+  encodingUtf8(@Res() res: Response) {
+    // 直接 send：由 Express 设置 Content-Length。
+    // （曾手动设置 Transfer-Encoding: chunked，与 Express 自动加的 Content-Length 冲突，
+    //  违反 RFC 7230，严格 HTTP 客户端会直接拒绝该响应）
+    res
+      .set('Content-Type', 'text/html; charset=utf-8')
+      .send('<html><body><h1>UTF-8 Encoded Response</h1><p>你好，世界！</p></body></html>');
   }
 
   @Get('gzip')

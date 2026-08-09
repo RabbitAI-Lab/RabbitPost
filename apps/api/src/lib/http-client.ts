@@ -7,7 +7,14 @@ import { constants as cryptoConstants } from "node:crypto";
 import http from "node:http";
 import http2 from "node:http2";
 import https from "node:https";
+import { promisify } from "node:util";
+import zlib from "node:zlib";
 import type { ResolvedRequestSettings, TlsProtocol } from "@rabbitpost/shared";
+
+const gunzip = promisify(zlib.gunzip);
+const inflate = promisify(zlib.inflate);
+const inflateRaw = promisify(zlib.inflateRaw);
+const brotliDecompress = promisify(zlib.brotliDecompress);
 
 export interface RawHttpResponse {
   status: number;
@@ -283,12 +290,48 @@ function sendHttp2(options: SendRequestOptions): Promise<RawHttpResponse> {
   });
 }
 
+/**
+ * 按 Content-Encoding 解压响应体（gzip / deflate / br）。
+ * 底层 http/http2 模块不做解压，不解压会让调用方拿到压缩字节。
+ * 解压失败时保留原始体：响应本身已到达，不掩盖现场。
+ */
+async function decompressResponse(resp: RawHttpResponse): Promise<RawHttpResponse> {
+  const encoding = findHeader(resp.headers, "content-encoding")
+    ?.toLowerCase()
+    .trim();
+  if (!encoding || encoding === "identity" || resp.body.byteLength === 0) {
+    return resp;
+  }
+  try {
+    switch (encoding) {
+      case "gzip":
+      case "x-gzip":
+        return { ...resp, body: await gunzip(resp.body) };
+      case "deflate":
+        // deflate 有 zlib 包装与裸 deflate 两种实现，先试带包装的
+        try {
+          return { ...resp, body: await inflate(resp.body) };
+        } catch {
+          return { ...resp, body: await inflateRaw(resp.body) };
+        }
+      case "br":
+        return { ...resp, body: await brotliDecompress(resp.body) };
+      default:
+        return resp;
+    }
+  } catch {
+    return resp;
+  }
+}
+
 /** 单次发送（不含重定向）：按 HTTP version 设置选择 h2 或 HTTP/1.1 */
-function sendOnce(options: SendRequestOptions): Promise<RawHttpResponse> {
+async function sendOnce(options: SendRequestOptions): Promise<RawHttpResponse> {
   // auto 目前按 HTTP/1.1 协商，选择 HTTP/2 时才以 h2 直连
-  return options.settings.httpVersion === "http2"
-    ? sendHttp2(options)
-    : sendHttp1(options);
+  const resp =
+    options.settings.httpVersion === "http2"
+      ? await sendHttp2(options)
+      : await sendHttp1(options);
+  return decompressResponse(resp);
 }
 
 /**

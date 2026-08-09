@@ -35,3 +35,6 @@ pnpm-debug.log*
 drizzle/meta/_journal.json.bak
 apps/api/public/cli/
 /.tmp-rustc
+
+# 本地构建产物（local-agent 二进制）
+apps/api/rabbitpost-runner
