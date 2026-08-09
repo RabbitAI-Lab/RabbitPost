@@ -104,14 +104,22 @@ struct ExecuteInput {
     /// 前端已解析好的明文变量表（环境变量 + Collection 变量），agent 不查库
     #[serde(default)]
     variables: HashMap<String, String>,
+    /// 前端已解析好的明文数据库连接（含密码；本机回环流转，与 variables 同级）
+    #[serde(default)]
+    db_connections: Vec<rp_core::model::ResolvedDbConnection>,
     name: Option<String>,
     item_id: Option<String>,
 }
 
 async fn execute(State(state): State<AppState>, Json(input): Json<ExecuteInput>) -> Json<Value> {
     let name = input.name.unwrap_or_else(|| "Untitled Request".to_string());
-    let result = exec::execute(
+    let ctx = exec::ExecContext {
+        db_connections: Some(&input.db_connections),
+        ..Default::default()
+    };
+    let result = exec::execute_with(
         &state.pool,
+        &ctx,
         &name,
         input.item_id,
         &input.request,

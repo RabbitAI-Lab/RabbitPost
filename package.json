@@ -36,6 +36,7 @@
       "@embedded-postgres/linux-arm64",
       "@embedded-postgres/linux-x64",
       "@embedded-postgres/win32-x64",
+      "better-sqlite3",
       "esbuild",
       "nx",
       "sharp"

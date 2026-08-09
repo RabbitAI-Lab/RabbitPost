@@ -3,36 +3,35 @@ import type {
   ExecuteResult,
   KeyValueItem,
   RequestConfig,
+  ResolvedDbConnection,
 } from "@rabbitpost/shared";
 import { resolveRequestSettings, substituteVariables } from "@rabbitpost/shared";
-import { executeApi, historyApi } from "../api";
+import { dbConnectionsApi, executeApi, historyApi } from "../api";
 import { newKvItem } from "../components/common/KeyValueEditor";
+import { useAppStore } from "../stores/app";
 import { cookieHeaderForUrl, hostnameOf, useCookiesStore } from "../stores/cookies";
 import { detectLocalAgent, invalidateLocalAgent } from "./local-agent";
 
 /**
- * 构建变量映射（Collection 为底，Environment 覆盖，与服务端及 Postman 一致）。
+ * 构建变量映射（globals 垫底，Collection 覆盖，Environment 最高，与服务端及 Postman 一致）。
  * executeRequestConfig 与长连接协议编辑器（WebSocket 等）共用。
  */
 export function buildVariableMap(args: {
   environmentId: string | null;
   environments: Environment[];
   collectionVariables?: KeyValueItem[];
+  globalVariables?: KeyValueItem[];
 }): Record<string, string> {
-  const { environmentId, environments, collectionVariables } = args;
-  const colVars = Object.fromEntries(
-    (collectionVariables ?? [])
-      .filter((v) => v.enabled && v.key)
-      .map((v) => [v.key, v.value]),
-  );
+  const { environmentId, environments, collectionVariables, globalVariables } = args;
+  const toMap = (items: KeyValueItem[] | undefined) =>
+    Object.fromEntries(
+      (items ?? []).filter((v) => v.enabled && v.key).map((v) => [v.key, v.value]),
+    );
   const env = environments.find((e) => e.id === environmentId);
   return {
-    ...colVars,
-    ...Object.fromEntries(
-      (env?.variables ?? [])
-        .filter((v) => v.enabled && v.key)
-        .map((v) => [v.key, v.value]),
-    ),
+    ...toMap(globalVariables),
+    ...toMap(collectionVariables),
+    ...toMap(env?.variables),
   };
 }
 
@@ -48,6 +47,8 @@ async function executeViaAgent(args: {
   request: RequestConfig;
   itemId?: string;
   variables: Record<string, string>;
+  /** 已解密的数据库连接（含明文密码；仅 local-agent 路径下发，与 variables 现状一致） */
+  dbConnections?: ResolvedDbConnection[];
 }): Promise<ExecuteResult> {
   const resp = await fetch(`${args.base}/api/v1/execute`, {
     method: "POST",
@@ -59,6 +60,7 @@ async function executeViaAgent(args: {
       itemId: args.itemId,
       request: args.request,
       variables: args.variables,
+      ...(args.dbConnections ? { dbConnections: args.dbConnections } : {}),
     }),
   });
   const body = (await resp.json()) as
@@ -118,11 +120,13 @@ export async function executeRequestConfig(args: {
   itemId?: string;
   /** 所属 Collection 的变量（作用域为当前 Collection，优先级低于 Environment） */
   collectionVariables?: KeyValueItem[];
+  /** Workspace 级全局变量（跨 Collection 可用，优先级最低） */
+  globalVariables?: KeyValueItem[];
 }): Promise<ExecuteResult> {
-  const { workspaceId, environmentId, environments, name, config, itemId, collectionVariables } =
+  const { workspaceId, environmentId, environments, name, config, itemId, collectionVariables, globalVariables } =
     args;
   const settings = resolveRequestSettings(config.settings);
-  const vars = buildVariableMap({ environmentId, environments, collectionVariables });
+  const vars = buildVariableMap({ environmentId, environments, collectionVariables, globalVariables });
   const resolvedUrl = substituteVariables(config.url, vars);
   // Disable cookie jar：本请求不带上已存 cookie
   const jarCookie = settings.disableCookieJar
@@ -152,6 +156,14 @@ export async function executeRequestConfig(args: {
   const agentBase = await detectLocalAgent();
   if (agentBase) {
     try {
+      // REST 不回传连接密码，local-agent 需要明文：经 resolve 端点由服务端解密下发；
+      // 仅当 workspace 配了连接时才拉取。拉取失败（如 viewer 角色）降级为不带连接执行
+      let dbConnections: ResolvedDbConnection[] | undefined;
+      if (useAppStore.getState().dbConnections.length > 0) {
+        dbConnections = await dbConnectionsApi
+          .resolve(workspaceId, environmentId)
+          .catch(() => undefined);
+      }
       result = await executeViaAgent({
         base: agentBase,
         workspaceId,
@@ -160,6 +172,7 @@ export async function executeRequestConfig(args: {
         request,
         itemId,
         variables: vars,
+        dbConnections,
       });
       reportLocalHistory({ workspaceId, name, request, result });
     } catch {

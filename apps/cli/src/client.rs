@@ -165,4 +165,342 @@ impl CliApi {
             .post(&format!("/api/v1/collections/{collection_id}/runs"), report)
             .await
     }
+
+    /// Collection 的执行记录：GET /api/v1/collections/:id/runs
+    pub async fn collection_runs(
+        &self,
+        collection_id: &str,
+        limit: Option<u32>,
+    ) -> anyhow::Result<serde_json::Value> {
+        let query = limit.map(|l| format!("?limit={l}")).unwrap_or_default();
+        self.http
+            .get(&format!("/api/v1/collections/{collection_id}/runs{query}"))
+            .await
+    }
+
+    /// 单次执行详情：GET /api/v1/runs/:jobId
+    pub async fn run_job(&self, job_id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.get(&format!("/api/v1/runs/{job_id}")).await
+    }
+
+    /// 下载服务端生成的执行报告（html/junit，非 JSON 信封，原文返回）
+    pub async fn run_report(&self, job_id: &str, format: &str) -> anyhow::Result<String> {
+        let resp = self
+            .http
+            .get_stream(&format!("/api/v1/runs/{job_id}/report?format={format}"))
+            .await?;
+        Ok(resp.text().await?)
+    }
+
+    /// 请求历史：GET /api/v1/workspaces/:id/history
+    pub async fn workspace_history(
+        &self,
+        workspace_id: &str,
+        limit: Option<u32>,
+        offset: u32,
+    ) -> anyhow::Result<serde_json::Value> {
+        let mut query = format!("?offset={offset}");
+        if let Some(limit) = limit {
+            query.push_str(&format!("&limit={limit}"));
+        }
+        self.http
+            .get(&format!("/api/v1/workspaces/{workspace_id}/history{query}"))
+            .await
+    }
+
+    /// 清空请求历史：DELETE /api/v1/workspaces/:id/history
+    pub async fn clear_history(&self, workspace_id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .delete(&format!("/api/v1/workspaces/{workspace_id}/history"))
+            .await
+    }
+
+    /// 单个 spec（含定义正文与类型）：GET /api/v1/specs/:id
+    pub async fn spec(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.get(&format!("/api/v1/specs/{id}")).await
+    }
+
+    // ------------------------------------------------------------------
+    // 团队 / Workspace 写操作与成员管理
+    // ------------------------------------------------------------------
+
+    pub async fn create_team(&self, body: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+        self.http.post("/api/v1/teams", body).await
+    }
+
+    pub async fn update_team(
+        &self,
+        id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http.patch(&format!("/api/v1/teams/{id}"), body).await
+    }
+
+    pub async fn delete_team(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.delete(&format!("/api/v1/teams/{id}")).await
+    }
+
+    pub async fn team_members(&self, team_id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.get(&format!("/api/v1/teams/{team_id}/members")).await
+    }
+
+    pub async fn add_team_member(
+        &self,
+        team_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .post(&format!("/api/v1/teams/{team_id}/members"), body)
+            .await
+    }
+
+    pub async fn update_team_member(
+        &self,
+        team_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .patch(&format!("/api/v1/teams/{team_id}/members"), body)
+            .await
+    }
+
+    pub async fn remove_team_member(
+        &self,
+        team_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .delete_with_body(&format!("/api/v1/teams/{team_id}/members"), body)
+            .await
+    }
+
+    pub async fn create_workspace(
+        &self,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http.post("/api/v1/workspaces", body).await
+    }
+
+    pub async fn update_workspace(
+        &self,
+        id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http.patch(&format!("/api/v1/workspaces/{id}"), body).await
+    }
+
+    pub async fn delete_workspace(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.delete(&format!("/api/v1/workspaces/{id}")).await
+    }
+
+    // ------------------------------------------------------------------
+    // 组织 / Runner / 文档 / Spec / 场景步骤
+    // ------------------------------------------------------------------
+
+    pub async fn orgs(&self) -> anyhow::Result<serde_json::Value> {
+        self.http.get("/api/v1/orgs").await
+    }
+
+    pub async fn create_org(&self, body: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+        self.http.post("/api/v1/orgs", body).await
+    }
+
+    pub async fn org(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.get(&format!("/api/v1/orgs/{id}")).await
+    }
+
+    pub async fn update_org(
+        &self,
+        id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http.patch(&format!("/api/v1/orgs/{id}"), body).await
+    }
+
+    pub async fn delete_org(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.delete(&format!("/api/v1/orgs/{id}")).await
+    }
+
+    pub async fn team_runners(&self, team_id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.get(&format!("/api/v1/teams/{team_id}/runners")).await
+    }
+
+    pub async fn create_runner(
+        &self,
+        team_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .post(&format!("/api/v1/teams/{team_id}/runners"), body)
+            .await
+    }
+
+    pub async fn runner(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.get(&format!("/api/v1/runners/{id}")).await
+    }
+
+    pub async fn update_runner(
+        &self,
+        id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http.patch(&format!("/api/v1/runners/{id}"), body).await
+    }
+
+    pub async fn delete_runner(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.delete(&format!("/api/v1/runners/{id}")).await
+    }
+
+    pub async fn rotate_runner_token(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .post(&format!("/api/v1/runners/{id}/token"), &serde_json::Value::Null)
+            .await
+    }
+
+    pub async fn documents(&self, workspace_id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .get(&format!("/api/v1/workspaces/{workspace_id}/documents"))
+            .await
+    }
+
+    pub async fn create_document(
+        &self,
+        workspace_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .post(&format!("/api/v1/workspaces/{workspace_id}/documents"), body)
+            .await
+    }
+
+    pub async fn document(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.get(&format!("/api/v1/documents/{id}")).await
+    }
+
+    pub async fn update_document(
+        &self,
+        id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http.patch(&format!("/api/v1/documents/{id}"), body).await
+    }
+
+    pub async fn delete_document(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.delete(&format!("/api/v1/documents/{id}")).await
+    }
+
+    pub async fn workspace_specs(&self, workspace_id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .get(&format!("/api/v1/workspaces/{workspace_id}/specs"))
+            .await
+    }
+
+    pub async fn create_spec(
+        &self,
+        workspace_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .post(&format!("/api/v1/workspaces/{workspace_id}/specs"), body)
+            .await
+    }
+
+    pub async fn update_spec(
+        &self,
+        id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http.patch(&format!("/api/v1/specs/{id}"), body).await
+    }
+
+    pub async fn delete_spec(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.delete(&format!("/api/v1/specs/{id}")).await
+    }
+
+    pub async fn scenario_steps(&self, scenario_id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .get(&format!("/api/v1/scenarios/{scenario_id}/steps"))
+            .await
+    }
+
+    pub async fn add_scenario_step(
+        &self,
+        scenario_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .post(&format!("/api/v1/scenarios/{scenario_id}/steps"), body)
+            .await
+    }
+
+    pub async fn reorder_scenario_steps(
+        &self,
+        scenario_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .patch(&format!("/api/v1/scenarios/{scenario_id}/steps"), body)
+            .await
+    }
+
+    pub async fn sync_all_scenario_steps(
+        &self,
+        scenario_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .post(&format!("/api/v1/scenarios/{scenario_id}/steps/sync-all"), body)
+            .await
+    }
+
+    pub async fn update_scenario_step(
+        &self,
+        step_id: &str,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .patch(&format!("/api/v1/scenario-steps/{step_id}"), body)
+            .await
+    }
+
+    pub async fn delete_scenario_step(&self, step_id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .delete(&format!("/api/v1/scenario-steps/{step_id}"))
+            .await
+    }
+
+    pub async fn sync_scenario_step(&self, step_id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http
+            .post(
+                &format!("/api/v1/scenario-steps/{step_id}/sync"),
+                &serde_json::Value::Null,
+            )
+            .await
+    }
+
+    // ------------------------------------------------------------------
+    // rt 长连接会话
+    // ------------------------------------------------------------------
+
+    pub async fn rt_create_session(
+        &self,
+        body: &serde_json::Value,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.http.post("/api/v1/rt/sessions", body).await
+    }
+
+    pub async fn rt_send(&self, id: &str, body: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
+        self.http.post(&format!("/api/v1/rt/sessions/{id}/send"), body).await
+    }
+
+    pub async fn rt_close(&self, id: &str) -> anyhow::Result<serde_json::Value> {
+        self.http.delete(&format!("/api/v1/rt/sessions/{id}")).await
+    }
+
+    /// rt 事件流（SSE）：返回未消费的响应，调用方按行解析
+    pub async fn rt_events(&self, id: &str) -> anyhow::Result<reqwest::Response> {
+        self.http
+            .get_stream(&format!("/api/v1/rt/sessions/{id}/events"))
+            .await
+    }
 }

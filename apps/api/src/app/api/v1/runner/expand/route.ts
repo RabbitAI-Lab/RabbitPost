@@ -12,6 +12,7 @@ import {
   handleRunnerRoute,
   loadRunnerVariables,
 } from "../../../../../lib/runner";
+import { loadWorkspaceDbConnections } from "../../../../../lib/db-connections";
 
 const bodySchema = z.object({
   // Runner 只能执行 request / collection / scenario；case 是 Web 上报的历史类型，不可派发
@@ -48,6 +49,8 @@ export const POST = handleRunnerRoute(async (req, _ctx, runner) => {
     concurrency: body.concurrency ?? 4,
     // Collection 级变量为底，Environment 覆盖
     variables: await loadRunnerVariables(body.environmentId ?? null, target.collectionId),
+    // 与 claim 一致：解密后的连接明文下发（CLI run 的 dbOperations / rp.db 依赖）
+    dbConnections: await loadWorkspaceDbConnections(target.workspaceId, body.environmentId ?? null),
     items: target.items,
   };
   return ok<RunnerJobAssignment>(assignment);

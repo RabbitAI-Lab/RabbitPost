@@ -77,6 +77,16 @@ export const requestSchema = z
   })
   .passthrough();
 
+const dbConnectionSchema = z
+  .object({
+    name: z.string().min(1),
+    config: z
+      .object({ type: z.enum(["mysql", "postgres", "sqlite", "redis"]) })
+      .passthrough(),
+    password: z.string().optional(),
+  })
+  .passthrough();
+
 const inputSchema = z.object({
   workspaceId: z.string().uuid(),
   environmentId: z.string().uuid().nullable().optional(),
@@ -84,6 +94,8 @@ const inputSchema = z.object({
   request: requestSchema,
   /** 可选：Collection Item ID，用于 Runner 模式关联已保存的请求 */
   itemId: z.string().uuid().optional(),
+  /** 可选：已解析的数据库连接（local-agent 明文下发路径）；缺省时服务端按 workspace 加载 */
+  dbConnections: z.array(dbConnectionSchema).optional(),
 });
 
 /**

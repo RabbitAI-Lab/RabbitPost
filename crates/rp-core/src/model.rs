@@ -190,6 +190,10 @@ pub struct RequestAuth {
     pub api_key_value: Option<String>,
     #[serde(default, rename = "apiKeyIn", skip_serializing_if = "Option::is_none")]
     pub api_key_in: Option<String>,
+    /// 引擎暂不执行的认证类型（jwt / oauth1 / hawk / awsSigv4 / ntlm / edgegrid / asap 等），
+    /// 原样透传存储（与 Web 端模型一致），往返不丢字段
+    #[serde(flatten)]
+    pub extra: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 fn auth_type_none() -> String {
@@ -211,6 +215,7 @@ impl Default for RequestAuth {
             api_key_key: None,
             api_key_value: None,
             api_key_in: None,
+            extra: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -222,6 +227,90 @@ pub struct RequestScripts {
     pub pre_request: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// 数据库连接与声明式数据库操作（对标 shared 的 Db* 类型）
+// ---------------------------------------------------------------------------
+
+/// 数据库连接配置（非密字段；密码见 ResolvedDbConnection.password）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbConnectionConfig {
+    /// mysql / postgres / sqlserver / oracle / clickhouse / mongodb / redis / sqlite
+    /// （本地 runner 仅支持 mysql / postgres / sqlite / redis，其余类型在执行期报 not supported）
+    #[serde(default, rename = "type")]
+    pub conn_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    /// sqlite 数据库文件路径（":memory:" 表示内存库）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filepath: Option<String>,
+    /// 完整连接串（给出时优先于离散字段）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection_string: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssl: Option<bool>,
+    /// 连接超时毫秒，默认 5000
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_timeout_ms: Option<u64>,
+    /// 只读模式：拒绝非 SELECT 语句（SQL 类连接有效）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only: Option<bool>,
+}
+
+/// 执行期使用的完整连接（含明文密码，仅在执行链路内流转）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedDbConnection {
+    pub name: String,
+    #[serde(default)]
+    pub config: DbConnectionConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
+/// 声明式数据库操作的结果提取规则（rows=全部行 JSON；row=首行 JSON；row.<col>=首行某列标量；value=Redis 返回值）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbExtraction {
+    pub variable: String,
+    pub source: String,
+}
+
+/// 声明式数据库操作步骤（前置/后置处理器）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbOperation {
+    #[serde(default)]
+    pub id: String,
+    /// 引用的连接名
+    pub connection: String,
+    /// sql / redis / mongo（本地 runner 仅支持 sql / redis）
+    pub kind: String,
+    /// SQL 语句 / Redis 命令（空格分隔）/ MongoDB 数据库命令（JSON 字符串）；支持 {{var}}
+    pub statement: String,
+    /// SQL 绑定参数，支持 {{var}} 替换
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extract: Option<Vec<DbExtraction>>,
+}
+
+/// 请求级数据库操作：pre 在 preRequest 脚本之前，post 在 test 脚本之前
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestDbOperations {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pre: Option<Vec<DbOperation>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub post: Option<Vec<DbOperation>>,
 }
 
 /// 请求级设置；缺省值与 shared 的 DEFAULT_REQUEST_SETTINGS 保持一致
@@ -276,6 +365,9 @@ pub struct RequestConfig {
     pub auth: RequestAuth,
     #[serde(default)]
     pub scripts: RequestScripts,
+    /// 声明式数据库操作（前置/后置处理器，对标 Apifox 数据库操作）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub db_operations: Option<RequestDbOperations>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docs: Option<String>,
     #[serde(default)]
@@ -328,6 +420,9 @@ pub struct JobAssignment {
     pub concurrency: usize,
     #[serde(default)]
     pub variables: HashMap<String, String>,
+    /// 服务端解析下发的数据库连接（含明文密码；与 variables 同级，仅本机执行使用）
+    #[serde(default)]
+    pub db_connections: Vec<ResolvedDbConnection>,
     #[serde(default)]
     pub items: Vec<JobItem>,
 }
@@ -383,6 +478,9 @@ pub struct JobResult {
     /// 脚本执行后的变量表（含 rp.variables.set 的改动）；场景执行时用于步骤间传递
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script_variables: Option<std::collections::HashMap<String, String>>,
+    /// 脚本执行后的 globals 表（rp.globals 作用域）；仅调用方传入 globals 时才有值
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script_globals: Option<std::collections::HashMap<String, String>>,
     /// 响应头（上报服务端，供 Send 按钮 Body / Headers tab 与报告展示）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_headers: Option<std::collections::HashMap<String, String>>,
@@ -652,6 +750,7 @@ mod tests {
             test_results: None,
             console_logs: None,
             script_variables: None,
+            script_globals: None,
             response_headers: None,
             response_body: None,
         };
@@ -685,6 +784,7 @@ mod tests {
             test_results: None,
             console_logs: None,
             script_variables: None,
+            script_globals: None,
             response_headers: None,
             response_body: None,
         };

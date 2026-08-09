@@ -13,6 +13,7 @@ function toWorkspace(row: typeof workspaces.$inferSelect): Workspace {
     name: row.name,
     description: row.description,
     createdBy: row.createdBy,
+    variables: row.variables ?? [],
     createdAt: row.createdAt.toISOString(),
   };
 }

@@ -322,7 +322,7 @@ export default function ResponseViewer({ response, sending }: Props) {
                 {consoleLogs.length > 0 && (
                   <div style={{ marginTop: 12 }}>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      脚本 Console 输出
+                      Console 输出（脚本 / 数据库操作）
                     </Typography.Text>
                     <pre
                       className="code-font"

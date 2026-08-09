@@ -9,6 +9,7 @@ import {
   handleRunnerRoute,
   loadRunnerVariables,
 } from "../../../../../../lib/runner";
+import { loadWorkspaceDbConnections } from "../../../../../../lib/db-connections";
 
 /** 原生 SQL 返回的列名为 snake_case，单独声明以免与 drizzle 的 camelCase 推断混淆 */
 interface ClaimedJobRow {
@@ -100,6 +101,8 @@ export const POST = handleRunnerRoute(async (_req, _ctx, runner) => {
       targetName: job.target_name,
       concurrency: job.concurrency,
       variables,
+      // 与 variables 同级：服务端解密后明文下发（含按环境覆盖），Runner 仅在本机使用
+      dbConnections: await loadWorkspaceDbConnections(job.workspace_id, job.environment_id),
       items,
     };
     return ok<{ job: RunnerJobAssignment }>({ job: assignment });

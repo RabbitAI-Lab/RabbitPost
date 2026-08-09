@@ -116,6 +116,7 @@ fn sample_result() -> JobResult {
         }]),
         console_logs: None,
         script_variables: None,
+        script_globals: None,
         response_headers: None,
         response_body: None,
     }

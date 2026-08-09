@@ -435,6 +435,116 @@ export interface RequestScripts {
   test?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Database connections & operations（对标 Apifox 数据库连接 / 数据库操作）
+// ---------------------------------------------------------------------------
+
+export type DbConnectionType =
+  | "mysql"
+  | "postgres"
+  | "sqlserver"
+  | "oracle"
+  | "clickhouse"
+  | "mongodb"
+  | "redis"
+  | "sqlite";
+
+/** SSL 模式（mysql / postgres 用；缺省等同 prefer） */
+export type DbSslMode = "prefer" | "require" | "verify-ca" | "verify-full";
+
+/** 数据库连接配置（非密字段；密码单独加密存储，见 ResolvedDbConnection） */
+export interface DbConnectionConfig {
+  type: DbConnectionType;
+  host?: string;
+  port?: number;
+  /**
+   * 数据库名；oracle 存服务名（service name），
+   * redis 存 Database Index 字符串（如 "0"）
+   */
+  database?: string;
+  username?: string;
+  /** sqlite 数据库文件路径 */
+  filepath?: string;
+  /** 完整连接串（给出时优先于离散字段；mongodb 强烈建议用连接串） */
+  connectionString?: string;
+  /**
+   * 兼容开关：true 视为 sslMode="require"；
+   * sqlserver 用该字段映射驱动的 encrypt（不校验证书）
+   */
+  ssl?: boolean;
+  /** SSL 模式（mysql / postgres 用；缺省等同 prefer） */
+  sslMode?: DbSslMode;
+  /** CA 证书内容（PEM 文本） */
+  sslCa?: string;
+  /** 客户端证书内容（PEM 文本） */
+  sslCert?: string;
+  /** 客户端私钥内容（PEM 文本） */
+  sslKey?: string;
+  /** 连接超时毫秒，默认 5000 */
+  connectTimeoutMs?: number;
+  /** 只读模式：拒绝非 SELECT 语句（SQL 类连接有效，clickhouse 同样生效） */
+  readOnly?: boolean;
+}
+
+/** 按环境覆盖的连接字段（environmentId → 部分配置） */
+export type DbConnectionEnvOverrides = Record<
+  string,
+  Partial<Pick<DbConnectionConfig, "host" | "port" | "database" | "username" | "connectionString">> & {
+    password?: string;
+  }
+>;
+
+/** 执行期使用的完整连接（含明文密码，仅在执行链路内流转，不落库、不回传前端快照） */
+export interface ResolvedDbConnection {
+  name: string;
+  config: DbConnectionConfig;
+  password?: string;
+}
+
+/** 声明式数据库操作的结果提取规则（对标 Apifox 的 allUser / user / userName 三变量） */
+export interface DbExtraction {
+  /** 写入的变量名 */
+  variable: string;
+  /** rows=全部行(JSON)；row=首行(JSON)；row.<col>=首行某列标量；value=Redis 命令返回值 */
+  source: "rows" | "row" | `row.${string}` | "value";
+}
+
+/** 声明式数据库操作步骤（前置/后置处理器） */
+export interface DbOperation {
+  id: string;
+  /** 引用的连接名 */
+  connection: string;
+  kind: "sql" | "redis" | "mongo";
+  /**
+   * SQL 语句 / Redis 命令（空格分隔）/ MongoDB 数据库命令（JSON 字符串，
+   * 对应 MongoDB runCommand，对标 Apifox 的“运行数据库命令”）；支持 {{var}}
+   */
+  statement: string;
+  /** SQL 绑定参数，支持 {{var}} 替换 */
+  params?: string[];
+  extract?: DbExtraction[];
+}
+
+export interface RequestDbOperations {
+  /** 请求发送前执行（在 preRequest 脚本之前） */
+  pre?: DbOperation[];
+  /** 响应返回后执行（在 test 脚本之前） */
+  post?: DbOperation[];
+}
+
+/** SQL 查询结果（各驱动统一形态） */
+export interface DbQueryResult {
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  /** 行数超过 maxRows 被截断时为 true */
+  truncated?: boolean;
+}
+
+/** SQL 写入（INSERT/UPDATE/DELETE）结果 */
+export interface DbExecResult {
+  affectedRows: number;
+}
+
 /** 请求级设置（对齐 Postman Settings tab；缺省值见 DEFAULT_REQUEST_SETTINGS） */
 export interface RequestSettings {
   /** 发送请求使用的 HTTP 版本 */
@@ -587,6 +697,8 @@ export interface RequestConfig {
   body: RequestBody;
   auth: RequestAuth;
   scripts: RequestScripts;
+  /** 声明式数据库操作（前置/后置处理器，对标 Apifox 数据库操作） */
+  dbOperations?: RequestDbOperations;
   /** 请求文档（Markdown） */
   docs?: string;
   settings?: RequestSettings;
@@ -790,6 +902,8 @@ export interface Workspace {
   name: string;
   description: string | null;
   createdBy: string;
+  /** Workspace 级全局变量（跨 Collection 可用，优先级最低：globals < collection < environment） */
+  variables: KeyValueItem[];
   createdAt: string;
 }
 
@@ -953,6 +1067,11 @@ export interface ExecuteRequestInput {
   request: RequestConfig;
   /** Collection Item ID，用于 Runner 模式关联已保存的请求 */
   itemId?: string;
+  /**
+   * 已解析的数据库连接（local-agent / runner 路径由调用方解析后明文下发；
+   * 服务端执行时缺省，由服务端按 workspaceId 自行加载）
+   */
+  dbConnections?: ResolvedDbConnection[];
 }
 
 export interface TestResult {

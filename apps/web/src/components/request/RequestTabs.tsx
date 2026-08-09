@@ -7,6 +7,7 @@ import type { WorkTab } from "../../stores/tabs";
 import { confirmCloseTab, confirmCloseTabs } from "../../lib/save-shortcut";
 import CliCenter from "../cli/CliCenter";
 import CollectionEditor from "../collection/CollectionEditor";
+import DbConnectionEditor from "../db-connection/DbConnectionEditor";
 import DocumentEditor from "../document/DocumentEditor";
 import EnvironmentEditor from "../environment/EnvironmentEditor";
 import ProfileCenter from "../profile/ProfileCenter";
@@ -190,6 +191,8 @@ export default function RequestTabs() {
               <RequestEditor tab={tab} />
             ) : tab.kind === "environment" ? (
               <EnvironmentEditor tab={tab} />
+            ) : tab.kind === "dbconnection" ? (
+              <DbConnectionEditor tab={tab} />
             ) : tab.kind === "document" ? (
               <DocumentEditor tab={tab} />
             ) : tab.kind === "spec" ? (

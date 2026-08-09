@@ -219,6 +219,28 @@ pm.test("body has id", () => {
 });
 ```
 
+`rp.globals`（get/set/unset/toObject）为 globals 作用域：CLI `rabbitpost run` 内跨请求、跨迭代持久（配合 `--globals` / `--export-globals`）；服务端一次性执行（Send）不持久化，仅保证 API 可用。
+
+## 数据库连接（前置/后置操作）
+
+Workspace 级数据库连接（Apifox 风格），在侧边栏 **Databases** 面板管理：支持 **MySQL / PostgreSQL / SQLite / Redis**，可按环境做字段覆盖（envOverrides）；密码与覆盖密文用 `DB_SECRET_KEY`（AES-256-GCM，`.env` 中配置）加密存储，API 只写不读（永不回传明文）。
+
+每个请求可配置**声明式数据库操作**（请求编辑器的「前置/后置数据库操作」）：`pre` 在发送前、`post` 在响应返回后按序执行；SQL 操作支持 `?` 参数绑定与 `extract` 变量提取（`rows` 全部行 JSON / `row` 首行 JSON / `row.<col>` 首行某列 / `value` Redis 返回值），提取结果写入变量表，对后续操作的 `{{var}}` 与脚本 `rp.environment.get` 可见。单条操作失败不中断请求，错误记入 Console（`[db:pre]` / `[db:post]` 前缀）。
+
+脚本内可用 `rp.db` API（顶层 `await`，两个沙箱语义一致）：
+
+```js
+// Pre-request / Tests 脚本中：
+const res = await rp.db.query("main", "SELECT name FROM users WHERE id = ?", [1]);
+rp.environment.set("userName", res.rows[0].name);   // res: { rows, rowCount, truncated? }
+const wr = await rp.db.exec("main", "UPDATE users SET seen = 1 WHERE id = ?", [1]); // { affectedRows }
+const v = await rp.db.redis("cache", "GET", ["token:1"]);
+```
+
+CLI 本机执行用 `--db-connection NAME=URL`（可多次，scheme 推导类型：`mysql://` / `postgres://` / `sqlite://<path>` / `redis://`，密码写在 URL 里）或 `--db-connections-file conns.json`（JSON 数组 `[{ "name", "config": { "type", ... }, "password"? }]`，同名被命令行覆盖）；因服务端不回传密码，CLI 不支持在线拉取连接。
+
+护栏：连接超时 5s（`connectTimeoutMs` 可覆盖）、单条语句 10s、查询结果最多 1000 行（超出截断并标记 `truncated`）、连接可设 `readOnly`（拒绝非 SELECT 语句）。执行结束统一关闭本次建立的连接。
+
 ## 生产部署要点
 
 - `DATABASE_URL` 指向真实 PostgreSQL，`db:push`（或 `db:generate` 生成迁移）同步表结构

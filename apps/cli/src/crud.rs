@@ -450,6 +450,233 @@ pub async fn env_delete(api: &CliApi, id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// collection 导出 / 导入（rabbitpost.collection / Postman v2.1 文件）
+// ---------------------------------------------------------------------------
+
+/// CollectionItemNode 树 -> 交换格式节点（只保留业务字段，顺序即数组顺序）
+fn to_export_nodes(items: &[CollectionItemNode]) -> Vec<serde_json::Value> {
+    items
+        .iter()
+        .map(|item| {
+            if item.item_type == "folder" {
+                json!({
+                    "type": "folder",
+                    "name": item.name,
+                    "description": item.description,
+                    "items": to_export_nodes(&item.children),
+                })
+            } else {
+                json!({
+                    "type": "request",
+                    "name": item.name,
+                    "request": item.request,
+                })
+            }
+        })
+        .collect()
+}
+
+/// collection export：服务端 Collection -> rabbitpost.collection 交换文件
+pub async fn collection_export(api: &CliApi, id: &str, file: Option<&str>) -> anyhow::Result<()> {
+    let collection = api.collection(id).await?;
+    let tree: Vec<CollectionItemNode> = serde_json::from_value(api.collection_tree(id).await?)?;
+    let file_json = json!({
+        "format": crate::convert::RP_COLLECTION_FORMAT,
+        "version": 1,
+        "exportedAt": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "name": collection.get("name").cloned().unwrap_or(serde_json::Value::Null),
+        "description": collection.get("description").cloned().unwrap_or(serde_json::Value::Null),
+        "variables": collection.get("variables").cloned().unwrap_or_else(|| json!([])),
+        "items": to_export_nodes(&tree),
+    });
+    match file {
+        Some(path) => {
+            tokio::fs::write(path, serde_json::to_string_pretty(&file_json)?).await?;
+            eprintln!("collection exported: {path}");
+            print_json(&json!({ "exported": true, "path": path }));
+        }
+        None => print_json(&file_json),
+    }
+    Ok(())
+}
+
+/// 递归创建 folder/request（Postman / RabbitPost 文件通用），返回导入的请求数
+fn import_nodes<'a>(
+    api: &'a CliApi,
+    collection_id: &'a str,
+    nodes: &'a [crate::convert::ImportedNode],
+    parent_id: Option<&'a str>,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<u64>> + Send + 'a>> {
+    Box::pin(async move {
+        let mut count = 0;
+        for node in nodes {
+            match node {
+                crate::convert::ImportedNode::Folder {
+                    name,
+                    description,
+                    items,
+                } => {
+                    let folder = api
+                        .create_item(
+                            collection_id,
+                            &json!({ "type": "folder", "name": name, "parentId": parent_id }),
+                        )
+                        .await?;
+                    let folder_id = folder
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| anyhow::anyhow!("create folder returned no id"))?
+                        .to_string();
+                    if let Some(description) = description {
+                        api.update_item(&folder_id, &json!({ "description": description }))
+                            .await?;
+                    }
+                    count += import_nodes(api, collection_id, items, Some(&folder_id)).await?;
+                }
+                crate::convert::ImportedNode::Request { name, request } => {
+                    let mut body = json!({ "type": "request", "name": name, "parentId": parent_id });
+                    if let Some(request) = request {
+                        body["request"] = json!(request);
+                    }
+                    api.create_item(collection_id, &body).await?;
+                    count += 1;
+                }
+            }
+        }
+        Ok(count)
+    })
+}
+
+/// collection import：rabbitpost.collection / Postman v2.1 文件 -> 服务端 Collection
+pub async fn collection_import(api: &CliApi, workspace_id: &str, file: &str) -> anyhow::Result<()> {
+    let path = file.strip_prefix('@').unwrap_or(file);
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("cannot read collection file {path}: {e}"))?;
+    let imported = crate::convert::parse_collection(&text)?;
+
+    // 服务端 description 上限 1024 字符（zod max(1024)），超长截断而非报错
+    let description = imported
+        .description
+        .map(|d| d.chars().take(1024).collect::<String>());
+    let collection = api
+        .create_collection(
+            workspace_id,
+            &json!({ "name": imported.name, "description": description }),
+        )
+        .await?;
+    let collection_id = collection
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("create collection returned no id"))?
+        .to_string();
+
+    if !imported.variables.is_empty() {
+        api.update_collection(&collection_id, &json!({ "variables": imported.variables }))
+            .await?;
+    }
+    let count = import_nodes(api, &collection_id, &imported.items, None).await?;
+    eprintln!("imported `{}` ({count} request(s))", imported.name);
+    print_json(&json!({
+        "imported": true,
+        "collectionId": collection_id,
+        "name": imported.name,
+        "requests": count,
+    }));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// runs：执行记录查询与报告下载
+// ---------------------------------------------------------------------------
+
+pub async fn runs_list(
+    api: &CliApi,
+    collection_id: &str,
+    limit: Option<u32>,
+    table: bool,
+) -> anyhow::Result<()> {
+    let data = api.collection_runs(collection_id, limit).await?;
+    if table {
+        let rows = crate::output::rows_from(&data, &[], |j| {
+            vec![
+                str_field(j, "id"),
+                str_field(j, "status"),
+                str_field(j, "targetName"),
+                str_field(j, "source"),
+                str_field(j, "createdAt"),
+            ]
+        });
+        print_table(&["ID", "STATUS", "TARGET", "SOURCE", "CREATED"], &rows);
+    } else {
+        print_json(&data);
+    }
+    Ok(())
+}
+
+pub async fn runs_get(api: &CliApi, job_id: &str) -> anyhow::Result<()> {
+    print_json(&api.run_job(job_id).await?);
+    Ok(())
+}
+
+/// runs report：下载服务端生成的 html/junit 报告到文件
+pub async fn runs_report(
+    api: &CliApi,
+    job_id: &str,
+    format: &str,
+    file: Option<&str>,
+) -> anyhow::Result<()> {
+    if format != "html" && format != "junit" {
+        anyhow::bail!("invalid --format `{format}`: expect html or junit");
+    }
+    let content = api.run_report(job_id, format).await?;
+    let ext = if format == "junit" { "xml" } else { "html" };
+    let path = file
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("rabbitpost-report-{}.{ext}", &job_id[..job_id.len().min(8)]));
+    tokio::fs::write(&path, &content).await?;
+    eprintln!("report written: {path}");
+    print_json(&json!({ "downloaded": true, "jobId": job_id, "format": format, "path": path }));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// history：请求历史
+// ---------------------------------------------------------------------------
+
+pub async fn history_list(
+    api: &CliApi,
+    workspace_id: &str,
+    limit: Option<u32>,
+    offset: u32,
+    table: bool,
+) -> anyhow::Result<()> {
+    let data = api.workspace_history(workspace_id, limit, offset).await?;
+    if table {
+        let rows = crate::output::rows_from(&data, &[], |h| {
+            vec![
+                str_field(h, "id"),
+                h.get("request")
+                    .and_then(|r| r.get("method"))
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                str_field(h, "name"),
+                str_field(h, "createdAt"),
+            ]
+        });
+        print_table(&["ID", "METHOD", "NAME", "CREATED"], &rows);
+    } else {
+        print_json(&data);
+    }
+    Ok(())
+}
+
+pub async fn history_clear(api: &CliApi, workspace_id: &str) -> anyhow::Result<()> {
+    print_json(&api.clear_history(workspace_id).await?);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

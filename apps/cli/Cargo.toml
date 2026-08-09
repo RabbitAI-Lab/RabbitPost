@@ -17,6 +17,10 @@ clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# spec lint 用：YAML 1.2 是 JSON 超集，一个解析器覆盖两种格式（与 Web 端 yaml 包一致）
+serde_yaml = "0.9"
+# rt 事件流（SSE）直接消费 rp-core 返回的 reqwest::Response
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs"] }
 uuid = { version = "1", features = ["v4"] }
 

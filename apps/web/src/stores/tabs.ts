@@ -1,6 +1,8 @@
 import type {
   Collection,
   CollectionItem,
+  DbConnectionConfig,
+  DbConnectionType,
   DocumentItem,
   Environment,
   EnvironmentVariable,
@@ -18,6 +20,8 @@ import type {
 import { createEmptyRequestConfig } from "@rabbitpost/shared";
 import { createRequestConfigForProtocol } from "../lib/protocols";
 import { create } from "zustand";
+import type { DbConnectionDto } from "../api";
+import { useAppStore } from "./app";
 
 export interface RequestTab {
   kind: "request";
@@ -38,7 +42,7 @@ export interface RequestTab {
   saving: boolean;
 }
 
-/** Collection 详情 tab（Overview/Authorization/Scripts/Variables/Runs） */
+/** Collection 详情 tab（Overview/Authorization/Scripts/Variables/全局变量/Runs） */
 export interface CollectionTab {
   kind: "collection";
   key: string;
@@ -48,7 +52,9 @@ export interface CollectionTab {
   description: string;
   /** Collection 级变量（即 collection.variables） */
   variables: KeyValueItem[];
-  /** 打开/保存时的快照（description + variables），用于 dirty 判断 */
+  /** Workspace 级全局变量草稿（即 workspace.variables，保存时写回 Workspace） */
+  globals: KeyValueItem[];
+  /** 打开/保存时的快照（description + variables + globals），用于 dirty 判断 */
   savedSnapshot: string;
   saving: boolean;
 }
@@ -109,6 +115,35 @@ export interface EnvironmentTab {
   saving: boolean;
 }
 
+/** 单个环境覆盖的编辑草稿：password 为新输入（空 = 保持不变），hasPassword 来自服务端 */
+export interface DbEnvOverrideDraft {
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  connectionString?: string;
+  hasPassword?: boolean;
+  /** 新输入的覆盖密码；空 = 保持不变 */
+  password?: string;
+}
+
+/** 数据库连接编辑 tab（连接字段 + 密码 + 按环境覆盖） */
+export interface DbConnectionTab {
+  kind: "dbconnection";
+  key: string;
+  connectionId: string;
+  name: string;
+  type: DbConnectionType;
+  config: DbConnectionConfig;
+  hasPassword: boolean;
+  /** 新输入的密码；空 = 保持不变（服务端不回传已有密码） */
+  password: string;
+  envOverrides: Record<string, DbEnvOverrideDraft>;
+  /** 打开/保存时的快照，用于 dirty 判断 */
+  savedSnapshot: string;
+  saving: boolean;
+}
+
 /**
  * CLI 中心 tab（团队 admin+ 可见）的分区：
  * runner-admin：Runner 注册与 Token 管理；runner-cli：Runner CLI 安装引导；
@@ -155,6 +190,7 @@ export type WorkTab =
   | DocumentTab
   | SpecTab
   | EnvironmentTab
+  | DbConnectionTab
   | CliTab
   | ProfileTab
   | RunnerTab
@@ -164,9 +200,26 @@ function envSnapshot(name: string, variables: EnvironmentVariable[]): string {
   return JSON.stringify({ name, variables });
 }
 
-/** Collection tab 快照：同时跟踪 Overview 文档与 Collection 变量 */
-function collectionSnapshot(description: string, variables: KeyValueItem[]): string {
-  return JSON.stringify({ description, variables });
+/** 数据库连接 tab 快照：跟踪全部可编辑字段（含新输入的密码，仅存内存） */
+function dbConnectionSnapshot(
+  tab: Pick<DbConnectionTab, "name" | "type" | "config" | "password" | "envOverrides">,
+): string {
+  return JSON.stringify({
+    name: tab.name,
+    type: tab.type,
+    config: tab.config,
+    password: tab.password,
+    envOverrides: tab.envOverrides,
+  });
+}
+
+/** Collection tab 快照：同时跟踪 Overview 文档、Collection 变量与 Workspace 全局变量 */
+function collectionSnapshot(
+  description: string,
+  variables: KeyValueItem[],
+  globals: KeyValueItem[],
+): string {
+  return JSON.stringify({ description, variables, globals });
 }
 
 function specSnapshot(tab: Pick<SpecTab, "name" | "format" | "content">): string {
@@ -194,6 +247,8 @@ interface TabsState {
   openDocument: (item: DocumentItem) => void;
   openSpec: (spec: Spec) => void;
   openEnvironment: (env: Environment) => void;
+  /** 打开数据库连接编辑 tab（同一连接复用同一 tab） */
+  openDbConnection: (conn: DbConnectionDto) => void;
   /** 打开 CLI 中心并定位到指定分区；已打开则复用同一个 tab */
   openCli: (section: CliSection) => void;
   openProfile: () => void;
@@ -219,10 +274,21 @@ interface TabsState {
   ) => void;
   /** Environment 保存后刷新快照 */
   markEnvironmentSaved: (key: string) => void;
+  /** 更新数据库连接 tab 的编辑草稿 */
+  updateDbConnection: (
+    key: string,
+    patch: Partial<
+      Pick<DbConnectionTab, "name" | "type" | "config" | "password" | "envOverrides">
+    >,
+  ) => void;
+  /** 数据库连接保存后刷新快照（同时更新 hasPassword / 覆盖的 hasPassword 标记） */
+  markDbConnectionSaved: (key: string, conn: DbConnectionDto) => void;
   /** 更新 Collection/文件夹/Document tab 的 Markdown 内容 */
   updateDocDescription: (key: string, description: string) => void;
   /** 更新 Collection tab 的变量列表 */
   updateCollectionVariables: (key: string, variables: KeyValueItem[]) => void;
+  /** 更新 Collection tab 的 Workspace 全局变量草稿 */
+  updateCollectionGlobals: (key: string, globals: KeyValueItem[]) => void;
   /** Overview 文档 / Collection 变量保存后刷新快照 */
   markDocSaved: (key: string) => void;
   closeTab: (key: string) => void;
@@ -370,6 +436,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       set({ activeKey: key });
       return;
     }
+    // 全局变量是 Workspace 级数据，从 app store 的 workspaces 里取当前草稿初值
+    const globals =
+      useAppStore.getState().workspaces.find((w) => w.id === collection.workspaceId)
+        ?.variables ?? [];
     const tab: CollectionTab = {
       kind: "collection",
       key,
@@ -377,9 +447,11 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       name: collection.name,
       description: collection.description ?? "",
       variables: collection.variables ?? [],
+      globals,
       savedSnapshot: collectionSnapshot(
         collection.description ?? "",
         collection.variables ?? [],
+        globals,
       ),
       saving: false,
     };
@@ -449,6 +521,65 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       tabs: s.tabs.map((t) =>
         t.key === key && t.kind === "environment" ? { ...t, ...patch } : t,
       ),
+    })),
+
+  openDbConnection: (conn) => {
+    const key = `db-${conn.id}`;
+    const existing = get().tabs.find((t) => t.key === key);
+    if (existing) {
+      set({ activeKey: key });
+      return;
+    }
+    const envOverrides: Record<string, DbEnvOverrideDraft> = Object.fromEntries(
+      Object.entries(conn.envOverrides ?? {}).map(([envId, o]) => [envId, { ...o }]),
+    );
+    const tab: DbConnectionTab = {
+      kind: "dbconnection",
+      key,
+      connectionId: conn.id,
+      name: conn.name,
+      type: conn.type,
+      config: conn.config,
+      hasPassword: conn.hasPassword,
+      password: "",
+      envOverrides,
+      savedSnapshot: "",
+      saving: false,
+    };
+    tab.savedSnapshot = dbConnectionSnapshot(tab);
+    set((s) => ({ tabs: [...s.tabs, tab], activeKey: key }));
+  },
+
+  updateDbConnection: (key, patch) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.key === key && t.kind === "dbconnection" ? { ...t, ...patch } : t,
+      ),
+    })),
+
+  markDbConnectionSaved: (key, conn) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) => {
+        if (t.key !== key || t.kind !== "dbconnection") return t;
+        // 保存后：主密码已设置则清空输入并更新 hasPassword；覆盖密码同理
+        const envOverrides = Object.fromEntries(
+          Object.entries(t.envOverrides).map(([envId, o]) => [
+            envId,
+            {
+              ...o,
+              hasPassword: conn.envOverrides?.[envId]?.hasPassword ?? false,
+              password: "",
+            },
+          ]),
+        );
+        const next: DbConnectionTab = {
+          ...t,
+          hasPassword: conn.hasPassword,
+          password: "",
+          envOverrides,
+        };
+        return { ...next, savedSnapshot: dbConnectionSnapshot(next) };
+      }),
     })),
 
   openSpec: (spec) => {
@@ -599,15 +730,22 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       ),
     })),
 
+  updateCollectionGlobals: (key, globals) =>
+    set((s) => ({
+      tabs: s.tabs.map((t) =>
+        t.key === key && t.kind === "collection" ? { ...t, globals } : t,
+      ),
+    })),
+
   markDocSaved: (key) =>
     set((s) => ({
       tabs: s.tabs.map((t) => {
         if (t.key !== key) return t;
-        // Collection tab 的快照含 description + variables
+        // Collection tab 的快照含 description + variables + globals
         if (t.kind === "collection") {
           return {
             ...t,
-            savedSnapshot: collectionSnapshot(t.description, t.variables),
+            savedSnapshot: collectionSnapshot(t.description, t.variables, t.globals),
           };
         }
         if (t.kind === "folder" || t.kind === "document") {
@@ -726,9 +864,10 @@ export function isTabDirty(tab: WorkTab): boolean {
   if (tab.kind === "cli" || tab.kind === "profile" || tab.kind === "runner" || tab.kind === "scenario") return false;
   if (tab.kind === "environment")
     return envSnapshot(tab.name, tab.variables) !== tab.savedSnapshot;
+  if (tab.kind === "dbconnection") return dbConnectionSnapshot(tab) !== tab.savedSnapshot;
   if (tab.kind === "spec") return specSnapshot(tab) !== tab.savedSnapshot;
   if (tab.kind === "collection") {
-    return collectionSnapshot(tab.description, tab.variables) !== tab.savedSnapshot;
+    return collectionSnapshot(tab.description, tab.variables, tab.globals) !== tab.savedSnapshot;
   }
   if (tab.kind !== "request") return tab.description !== tab.savedSnapshot;
   if (tab.savedSnapshot === null) return true;

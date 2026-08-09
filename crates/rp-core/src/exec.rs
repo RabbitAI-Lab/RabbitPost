@@ -2,7 +2,7 @@
 //! 网络错误原文透传（含 source 链），与服务端 executor 的处理保持一致。
 //! 判定语义：传输层拿到 2xx/3xx 且全部断言通过才算 ok（断言失败等价于用例失败）。
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -65,13 +65,14 @@ impl ClientPool {
         // （如百度对非浏览器 UA 返回 JS 跳转页而非完整首页）。用户在 Headers tab 手写
         // 的 User-Agent 仍由 build_headers 正常携带。
         //
-        // gzip(true) 启用自动解压（服务端可能不顾 accept-encoding 强制 gzip），
+        // gzip/deflate(true) 启用自动解压（服务端可能不顾 accept-encoding 强制压缩），
         // 但每条请求会在 do_send 中将 accept-encoding 覆盖为 identity（对齐 Postman：
-        // 不主动声明压缩支持），避免部分站点因 accept-encoding: gzip 返回异常内容。
+        // 不主动声明压缩支持），避免部分站点因 accept-encoding 返回异常内容。
         let mut builder = Client::builder()
             .redirect(redirect)
             .danger_accept_invalid_certs(!key.verify_ssl)
-            .gzip(true);
+            .gzip(true)
+            .deflate(true);
         // timeoutMs = 0 表示不超时
         if key.timeout_ms > 0 {
             builder = builder.timeout(Duration::from_millis(key.timeout_ms));
@@ -131,6 +132,7 @@ fn failure(
         test_results,
         console_logs,
         script_variables: None,
+        script_globals: None,
         response_headers: None,
         response_body: None,
     }
@@ -805,6 +807,29 @@ pub async fn execute(
     cfg: &RequestConfig,
     vars: &HashMap<String, String>,
 ) -> JobResult {
+    execute_with(pool, &ExecContext::default(), name, item_id, cfg, vars).await
+}
+
+/// 执行上下文：globals 作用域与 Cookie Jar（CLI 一次 run 内共享；Runner 用默认值）
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ExecContext<'a> {
+    pub globals: Option<&'a HashMap<String, String>>,
+    pub jar: Option<&'a crate::cookies::CookieJar>,
+    /// 覆盖脚本超时（毫秒；None 或 0 用引擎默认 5s）
+    pub script_timeout_ms: Option<u64>,
+    /// 已解析的数据库连接（声明式 dbOperations 与脚本 rp.db 共用；一次执行内惰性连接、结束关闭）
+    pub db_connections: Option<&'a [crate::model::ResolvedDbConnection]>,
+}
+
+/// 带上下文的完整执行形态
+pub async fn execute_with(
+    pool: &ClientPool,
+    ctx: &ExecContext<'_>,
+    name: &str,
+    item_id: Option<String>,
+    cfg: &RequestConfig,
+    vars: &HashMap<String, String>,
+) -> JobResult {
     // 脚本产物（断言 / console）；只有真的跑过脚本才上报，避免噪声
     let mut test_results: Vec<TestResult> = Vec::new();
     let mut console_logs: Vec<ConsoleLogEntry> = Vec::new();
@@ -813,8 +838,30 @@ pub async fn execute(
     // 1. 变量替换（pre-request 之前一次性完成，与服务端一致）
     let mut config = substitute_config(cfg, vars);
     let mut variables = vars.clone();
+    let mut globals = ctx.globals.cloned().unwrap_or_default();
 
-    // 2. pre-request 脚本：可改写变量与请求；改写后的请求不再做变量替换
+    // 数据库连接注册表：本次执行内惰性连接，结束时统一关闭
+    let db_registry = ctx
+        .db_connections
+        .filter(|connections| !connections.is_empty())
+        .map(|connections| Arc::new(crate::db::DbRegistry::new(connections)));
+
+    // 2. db.pre 数据库操作（pre-request 脚本之前；失败只进 console，不中断请求）
+    if let Some(pre_ops) = cfg.db_operations.as_ref().and_then(|d| d.pre.as_deref()) {
+        if !pre_ops.is_empty() {
+            scripts_ran = true;
+            crate::db::run_operations(
+                db_registry.as_deref(),
+                pre_ops,
+                "pre",
+                &mut variables,
+                &mut console_logs,
+            )
+            .await;
+        }
+    }
+
+    // 3. pre-request 脚本：可改写变量与请求；改写后的请求不再做变量替换
     if let Some(code) = cfg.scripts.pre_request.as_deref() {
         if !code.trim().is_empty() {
             scripts_ran = true;
@@ -824,10 +871,20 @@ pub async fn execute(
                 headers: enabled_pairs(&config.headers).into_iter().collect(),
                 body: None,
             };
-            let out = script::run_script(code, "pre-request", &variables, Some(&view), None);
+            let out = script::run_script_full(
+                code,
+                "pre-request",
+                &variables,
+                &globals,
+                ctx.script_timeout_ms,
+                Some(&view),
+                None,
+                db_registry.clone(),
+            ).await;
             test_results.extend(out.test_results);
             console_logs.extend(out.console_logs);
             variables = out.variables;
+            globals = out.globals;
             if let Some(rewritten) = out.request {
                 config.method = rewritten.method;
                 config.url = rewritten.url;
@@ -848,6 +905,7 @@ pub async fn execute(
     let method = match Method::from_bytes(config.method.to_uppercase().as_bytes()) {
         Ok(m) => m,
         Err(e) => {
+            close_db(&db_registry).await;
             return finish_early(
                 failure(
                     name,
@@ -865,41 +923,75 @@ pub async fn execute(
         }
     };
 
-    let send_result = send_once(pool, name, item_id.clone(), &config, &method).await;
+    let send_result = send_once(pool, ctx.jar, name, item_id.clone(), &config, &method).await;
     let (mut result, response_view) = match send_result {
         Ok((result, view)) => (result, view),
         Err(result) => {
+            close_db(&db_registry).await;
             return finish_early(result, scripts_ran, test_results, console_logs);
         }
     };
 
-    // 3. test 脚本：响应断言；同时收集脚本中的变量改动（场景步骤间传递用）
-    if let Some(code) = cfg.scripts.test.as_deref() {
-        if !code.trim().is_empty() {
+    // 4. db.post 数据库操作（响应返回后、test 脚本之前；失败只进 console）
+    if let Some(post_ops) = cfg.db_operations.as_ref().and_then(|d| d.post.as_deref()) {
+        if !post_ops.is_empty() {
             scripts_ran = true;
-            let out = script::run_script(
-                code,
-                "test",
-                &variables,
-                None,
-                response_view.as_ref(),
-            );
-            test_results.extend(out.test_results);
-            console_logs.extend(out.console_logs);
-            variables = out.variables;
+            crate::db::run_operations(
+                db_registry.as_deref(),
+                post_ops,
+                "post",
+                &mut variables,
+                &mut console_logs,
+            )
+            .await;
         }
     }
 
-    // 断言失败等价于用例失败（newman 语义）；无断言时保持传输层判定
-    if result.ok && test_results.iter().any(|t| !t.passed) {
-        result.ok = false;
+    // 5. test 脚本：响应断言；同时收集脚本中的变量改动（场景步骤间传递用）
+    if let Some(code) = cfg.scripts.test.as_deref() {
+        if !code.trim().is_empty() {
+            scripts_ran = true;
+            let out = script::run_script_full(
+                code,
+                "test",
+                &variables,
+                &globals,
+                ctx.script_timeout_ms,
+                None,
+                response_view.as_ref(),
+                db_registry.clone(),
+            ).await;
+            test_results.extend(out.test_results);
+            console_logs.extend(out.console_logs);
+            variables = out.variables;
+            globals = out.globals;
+        }
+    }
+
+    close_db(&db_registry).await;
+
+    // newman 语义：有断言时结果完全由断言决定（负向用例可断言 4xx/5xx 并通过）；
+    // 无断言时保持 2xx/3xx 的传输层判定（result.ok 在发送阶段已按状态码设置）
+    if !test_results.is_empty() {
+        result.ok = test_results.iter().all(|t| t.passed);
     }
     let mut final_result = finish_early(result, scripts_ran, test_results, console_logs);
     // 将脚本执行后的变量表附加到结果中（场景执行时用于步骤间传递）
     if scripts_ran {
         final_result.script_variables = Some(variables);
+        // globals 只在调用方启用该作用域时上报，避免污染既有上报契约
+        if ctx.globals.is_some() {
+            final_result.script_globals = Some(globals);
+        }
     }
     final_result
+}
+
+/// 关闭本次执行的数据库连接（无注册表时为空操作）
+async fn close_db(registry: &Option<Arc<crate::db::DbRegistry>>) {
+    if let Some(registry) = registry {
+        registry.close_all().await;
+    }
 }
 
 fn finish_early(
@@ -918,6 +1010,7 @@ fn finish_early(
 /// 发送一次请求；成功返回（结果, 响应视图），失败直接返回错误结果
 async fn send_once(
     pool: &ClientPool,
+    jar: Option<&crate::cookies::CookieJar>,
     name: &str,
     item_id: Option<String>,
     config: &RequestConfig,
@@ -952,6 +1045,18 @@ async fn send_once(
             ))
         }
     };
+
+    // Cookie Jar：用户显式写了 Cookie 头时不注入（显式优先）；重定向后的域名
+    // 变化不重新计算（与 newman 的会话外重定向行为一致，属于已知限制）
+    if let Some(jar) = jar {
+        if !headers.contains_key(reqwest::header::COOKIE) {
+            if let Some(cookie) = jar.cookies_for(url.as_str()) {
+                if let Ok(value) = HeaderValue::from_str(&cookie) {
+                    headers.insert(reqwest::header::COOKIE, value);
+                }
+            }
+        }
+    }
 
     let payload = match build_payload(config, method) {
         Ok(p) => p,
@@ -1037,7 +1142,16 @@ async fn send_once(
                             }
                         };
                         return do_send(
-                            &client, name, item_id, method, &url, &headers, retry_payload,
+                            &client,
+                            jar,
+                            SendJob {
+                                name,
+                                item_id,
+                                method,
+                                url: &url,
+                                headers: &headers,
+                                payload: retry_payload,
+                            },
                         )
                         .await;
                     }
@@ -1080,7 +1194,19 @@ async fn send_once(
         ));
     }
 
-    do_send(&client, name, item_id, method, &url, &headers, payload).await
+    do_send(
+        &client,
+        jar,
+        SendJob {
+            name,
+            item_id,
+            method,
+            url: &url,
+            headers: &headers,
+            payload,
+        },
+    )
+    .await
 }
 
 /// 构建并发送请求（不处理认证），返回原始响应
@@ -1116,16 +1242,30 @@ async fn send_raw(
     request.headers(headers.clone()).send().await
 }
 
+/// do_send 的入参打包（避免超长参数列表）
+struct SendJob<'a> {
+    name: &'a str,
+    item_id: Option<String>,
+    method: &'a Method,
+    url: &'a Url,
+    headers: &'a HeaderMap,
+    payload: Payload,
+}
+
 /// 执行发送并构建 JobResult
 async fn do_send(
     client: &Client,
-    name: &str,
-    item_id: Option<String>,
-    method: &Method,
-    url: &Url,
-    headers: &HeaderMap,
-    payload: Payload,
+    jar: Option<&crate::cookies::CookieJar>,
+    job: SendJob<'_>,
 ) -> Result<(JobResult, Option<script::ResponseView>), JobResult> {
+    let SendJob {
+        name,
+        item_id,
+        method,
+        url,
+        headers,
+        payload,
+    } = job;
     let mut request = client.request(method.clone(), url.clone());
     let mut h = headers.clone();
     match payload {
@@ -1146,7 +1286,7 @@ async fn do_send(
             request = request.multipart(form);
         }
     }
-    // reqwest gzip(true) 会自动注入 accept-encoding: gzip 作为默认头；
+    // reqwest gzip/deflate(true) 会自动注入 accept-encoding 作为默认头；
     // 用户未显式声明时应覆盖为 identity（对齐 Postman：不主动声明压缩支持），
     // 避免部分站点因 accept-encoding: gzip 返回异常内容。
     // 用户在 Headers tab 手写的 Accept-Encoding 会在此处覆盖 identity。
@@ -1161,6 +1301,14 @@ async fn do_send(
             let status = resp.status();
             let status_text = status.canonical_reason().unwrap_or("").to_string();
             let final_url = resp.url().to_string();
+            // Set-Cookie 入库（按最终 URL；同名 header 可能多条，逐条处理）
+            if let Some(jar) = jar {
+                for value in resp.headers().get_all(reqwest::header::SET_COOKIE).iter() {
+                    if let Ok(text) = value.to_str() {
+                        jar.store(&final_url, text);
+                    }
+                }
+            }
             // reqwest HeaderMap 对同名 header（如 set-cookie）有多条记录；
             // 收集到 HashMap 时须合并而非覆盖（否则 Headers tab 会少行、Cookie 会丢）
             let mut response_headers: HashMap<String, String> = HashMap::new();
@@ -1179,9 +1327,12 @@ async fn do_send(
                 Ok(bytes) => {
                     let duration_ms = started.elapsed().as_millis() as u64;
                     let size = bytes.len();
-                    // 与 CI 语义一致：4xx / 5xx 记为失败，状态码仍原样上报
+                    // 初判按 CI 语义：4xx / 5xx 记为失败，状态码仍原样上报；
+                    // 若跑了 test 断言，最终结果由断言决定（见 test 脚本汇合处）
                     let ok = status.is_success() || status.is_redirection();
-                    let body_text = String::from_utf8_lossy(&bytes).into_owned();
+                    // from_utf8_lossy 会保留合法的 NUL（二进制体常见），
+                    // 但 Postgres text/jsonb 拒绝 \0，上报前剥除
+                    let body_text = String::from_utf8_lossy(&bytes).replace('\0', "");
                     let view = if size <= MAX_BODY_CAPTURE_BYTES {
                         Some(script::ResponseView {
                             code: status.as_u16(),
@@ -1216,6 +1367,7 @@ async fn do_send(
                             test_results: None,
                             console_logs: None,
                             script_variables: None,
+                            script_globals: None,
                             response_headers: Some(response_headers),
                             response_body: Some(report_body),
                         },
@@ -1237,6 +1389,7 @@ async fn do_send(
                     test_results: None,
                     console_logs: None,
                     script_variables: None,
+                    script_globals: None,
                     response_headers: None,
                     response_body: None,
                 }),
@@ -1755,6 +1908,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execute_decompresses_gzip_and_deflate() {
+        // `{"compressed":true}` 的预压缩字节（服务端不顾 accept-encoding 强制压缩的场景）
+        const PLAIN: &str = "{\"compressed\":true}";
+        const GZIP: &[u8] = &[
+            31, 139, 8, 0, 0, 0, 0, 0, 2, 255, 171, 86, 74, 206, 207, 45, 40, 74, 45, 46, 78, 77,
+            81, 178, 42, 41, 42, 77, 173, 5, 0, 241, 234, 57, 149, 19, 0, 0, 0,
+        ];
+        const DEFLATE: &[u8] = &[
+            120, 156, 171, 86, 74, 206, 207, 45, 40, 74, 45, 46, 78, 77, 81, 178, 42, 41, 42, 77,
+            173, 5, 0, 73, 60, 7, 108,
+        ];
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/gzip"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-encoding", "gzip")
+                    .set_body_bytes(GZIP),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/deflate"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-encoding", "deflate")
+                    .set_body_bytes(DEFLATE),
+            )
+            .mount(&server)
+            .await;
+
+        for (p, tag) in [("/gzip", "gz"), ("/deflate", "dfl")] {
+            let mut cfg = base_cfg();
+            cfg.url = format!("{}{}", server.uri(), p);
+            let pool = test_pool();
+            let result = execute(&pool, tag, None, &cfg, &no_vars()).await;
+            assert!(result.ok, "{p} 应成功: {:?}", result.error);
+            assert_eq!(
+                result.response_body.as_deref(),
+                Some(PLAIN),
+                "{p} 响应应已自动解压"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn execute_times_out_per_settings() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -1909,6 +2109,40 @@ mod tests {
         assert_eq!(tests.len(), 1);
         assert!(!tests[0].passed);
         assert!(tests[0].error.as_deref().unwrap_or("").contains("201"));
+    }
+
+    #[tokio::test]
+    async fn passing_assertion_on_error_status_marks_result_ok() {
+        // 负向用例：预期返回 4xx/5xx 并断言该状态码，断言全过即用例通过
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/bad"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("{}"))
+            .mount(&server)
+            .await;
+
+        let mut cfg = base_cfg();
+        cfg.url = format!("{}/bad", server.uri());
+        cfg.scripts = RequestScripts {
+            pre_request: None,
+            test: Some(
+                "rp.test(\"status is 400\", () => { rp.response.to.have.status(400); });"
+                    .to_string(),
+            ),
+        };
+        let pool = test_pool();
+        let result = execute(&pool, "negative", None, &cfg, &no_vars()).await;
+        assert!(result.ok, "断言全过的 4xx 负向用例应判定通过");
+        assert_eq!(result.status, Some(400));
+        let tests = result.test_results.expect("script results expected");
+        assert!(tests.iter().all(|t| t.passed));
+
+        // 无断言的 4xx 仍按传输层判定为失败（CI 语义不变）
+        cfg.scripts = RequestScripts::default();
+        let pool2 = test_pool();
+        let result = execute(&pool2, "no-script", None, &cfg, &no_vars()).await;
+        assert!(!result.ok, "无断言的 4xx 仍应失败");
+        assert_eq!(result.status, Some(400));
     }
 
     #[tokio::test]

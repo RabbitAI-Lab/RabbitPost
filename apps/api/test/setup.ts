@@ -25,6 +25,7 @@ const TABLES = [
   "collection_items",
   "collections",
   "histories",
+  "db_connections",
   "environments",
   "document_items",
   "specs",

@@ -4,6 +4,9 @@ import type {
   Collection,
   CollectionItem,
   CollectionShare,
+  DbConnectionConfig,
+  DbConnectionEnvOverrides,
+  DbConnectionType,
   DocumentItem,
   Environment,
   ExecuteRequestInput,
@@ -12,6 +15,7 @@ import type {
   HistoryResponseSummary,
   RequestCase,
   RequestConfig,
+  ResolvedDbConnection,
   RunJob,
   RunJobDetail,
   Runner,
@@ -84,8 +88,10 @@ export const workspacesApi = {
       method: "POST",
       json: { teamId, name, description },
     }),
-  update: (workspaceId: string, patch: { name?: string; description?: string | null }) =>
-    api(`/api/v1/workspaces/${workspaceId}`, { method: "PATCH", json: patch }),
+  update: (
+    workspaceId: string,
+    patch: { name?: string; description?: string | null; variables?: Workspace["variables"] },
+  ) => api(`/api/v1/workspaces/${workspaceId}`, { method: "PATCH", json: patch }),
   remove: (workspaceId: string) =>
     api(`/api/v1/workspaces/${workspaceId}`, { method: "DELETE" }),
 };
@@ -346,6 +352,84 @@ export const environmentsApi = {
     api(`/api/v1/environments/${environmentId}`, { method: "PATCH", json: patch }),
   remove: (environmentId: string) =>
     api(`/api/v1/environments/${environmentId}`, { method: "DELETE" }),
+};
+
+// ---------------------------------------------------------------------------
+// db connections（workspace 级数据库连接；密码一律不回传，仅 hasPassword 标记）
+// ---------------------------------------------------------------------------
+
+/** 服务端返回的连接 DTO：envOverrides 内密码以 hasPassword 标记替代 */
+export interface DbConnectionDto {
+  id: string;
+  workspaceId: string;
+  name: string;
+  type: DbConnectionType;
+  config: DbConnectionConfig;
+  hasPassword: boolean;
+  envOverrides: Record<
+    string,
+    Partial<Pick<DbConnectionConfig, "host" | "port" | "database" | "username" | "connectionString">> & {
+      hasPassword?: boolean;
+    }
+  > | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DbConnectionInput {
+  name?: string;
+  type?: DbConnectionType;
+  config?: DbConnectionConfig;
+  /** 非空 = 设置/更新密码；"" = 清除；缺省 = 保持不变 */
+  password?: string;
+  /** 整体替换；各环境内 password 缺省 = 保留已有 */
+  envOverrides?: DbConnectionEnvOverrides;
+}
+
+export const dbConnectionsApi = {
+  list: (workspaceId: string) =>
+    api<DbConnectionDto[]>(`/api/v1/db-connections?workspaceId=${workspaceId}`),
+  create: (
+    workspaceId: string,
+    input: Required<Pick<DbConnectionInput, "name" | "type" | "config">> &
+      Omit<DbConnectionInput, "name" | "type" | "config">,
+  ) =>
+    api<DbConnectionDto>("/api/v1/db-connections", {
+      method: "POST",
+      json: { workspaceId, ...input },
+    }),
+  update: (connectionId: string, patch: DbConnectionInput) =>
+    api<DbConnectionDto>(`/api/v1/db-connections/${connectionId}`, {
+      method: "PATCH",
+      json: patch,
+    }),
+  remove: (connectionId: string) =>
+    api<{ deleted: boolean }>(`/api/v1/db-connections/${connectionId}`, {
+      method: "DELETE",
+    }),
+  /** 连通性测试；失败也返回 200 + { success: false, error } */
+  test: (connectionId: string, environmentId?: string | null) =>
+    api<{ success: true; latencyMs: number } | { success: false; error: string }>(
+      `/api/v1/db-connections/${connectionId}/test`,
+      { method: "POST", json: { environmentId: environmentId ?? null } },
+    ),
+  /** 内联连通性测试（不落库）：新建/编辑对话框内直接以表单配置测试 */
+  testInline: (input: {
+    workspaceId: string;
+    type: DbConnectionType;
+    config: DbConnectionConfig;
+    password?: string;
+  }) =>
+    api<{ success: true; latencyMs: number } | { success: false; error: string }>(
+      "/api/v1/db-connections/test",
+      { method: "POST", json: input },
+    ),
+  /** 解密为执行期连接（含明文密码；仅 local-agent 执行路径使用，editor+） */
+  resolve: (workspaceId: string, environmentId?: string | null) =>
+    api<ResolvedDbConnection[]>("/api/v1/db-connections/resolve", {
+      method: "POST",
+      json: { workspaceId, environmentId: environmentId ?? null },
+    }),
 };
 
 // ---------------------------------------------------------------------------

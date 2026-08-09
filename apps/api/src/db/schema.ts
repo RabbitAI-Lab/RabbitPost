@@ -12,6 +12,8 @@ import {
 } from "drizzle-orm/pg-core";
 import type {
   ConsoleLogEntry,
+  DbConnectionConfig,
+  DbConnectionEnvOverrides,
   EnvironmentVariable,
   HistoryResponseSummary,
   KeyValueItem,
@@ -258,6 +260,8 @@ export const workspaces = pgTable(
     createdBy: uuid("created_by")
       .references(() => users.id)
       .notNull(),
+    /** Workspace 级全局变量（跨 Collection 可用，优先级低于 Collection / Environment） */
+    variables: jsonb("variables").$type<KeyValueItem[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -479,6 +483,34 @@ export const environments = pgTable(
       .notNull(),
   },
   (t) => [index("environments_workspace_idx").on(t.workspaceId)],
+);
+
+// ---------------------------------------------------------------------------
+// db_connections：workspace 级数据库连接（密码 AES-GCM 加密存 passwordEnc）
+// ---------------------------------------------------------------------------
+export const dbConnections = pgTable(
+  "db_connections",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .references(() => workspaces.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    type: text("type").notNull(), // mysql | postgres | sqlite | redis
+    /** 非密配置字段（host/port/database/username/filepath/connectionString/...） */
+    config: jsonb("config").$type<DbConnectionConfig>().notNull(),
+    /** 密码密文（v1:<iv>:<tag>:<ct>，见 lib/crypto.ts） */
+    passwordEnc: text("password_enc"),
+    /** 按环境覆盖的连接字段（environmentId → 部分配置，含可选明文密码） */
+    envOverrides: jsonb("env_overrides").$type<DbConnectionEnvOverrides>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [index("db_connections_workspace_idx").on(t.workspaceId)],
 );
 
 // ---------------------------------------------------------------------------

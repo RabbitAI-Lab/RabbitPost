@@ -12,11 +12,13 @@ import { create } from "zustand";
 import {
   authApi,
   collectionsApi,
+  dbConnectionsApi,
   documentsApi,
   environmentsApi,
   specsApi,
   teamsApi,
   workspacesApi,
+  type DbConnectionDto,
 } from "../api";
 
 interface AppState {
@@ -39,6 +41,8 @@ interface AppState {
   specs: Spec[];
   environments: Environment[];
   activeEnvironmentId: string | null;
+  /** Workspace 级数据库连接（密码不回传，仅 hasPassword 标记） */
+  dbConnections: DbConnectionDto[];
 
   bootstrap: () => Promise<void>;
   signIn: (user: User) => Promise<void>;
@@ -58,6 +62,7 @@ interface AppState {
   applyDocumentTree: (nextTree: DocumentItem[]) => Promise<void>;
   refreshSpecs: () => Promise<void>;
   refreshEnvironments: () => Promise<void>;
+  refreshDbConnections: () => Promise<void>;
   setActiveEnvironment: (environmentId: string | null) => void;
 }
 
@@ -89,6 +94,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   specs: [],
   environments: [],
   activeEnvironmentId: null,
+  dbConnections: [],
 
   bootstrap: async () => {
     try {
@@ -130,6 +136,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       specs: [],
       environments: [],
       activeEnvironmentId: null,
+      dbConnections: [],
     });
   },
 
@@ -148,7 +155,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (wsId) {
       await get().selectWorkspace(wsId);
     } else {
-      set({ collections: [], collectionTrees: {}, documentTree: [], specs: [], environments: [], activeEnvironmentId: null });
+      set({ collections: [], collectionTrees: {}, documentTree: [], specs: [], environments: [], activeEnvironmentId: null, dbConnections: [] });
     }
   },
 
@@ -168,6 +175,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().refreshDocuments(),
       get().refreshSpecs(),
       get().refreshEnvironments(),
+      get().refreshDbConnections(),
     ]);
     const envId = get().environments.find((e) => e.id === savedEnv)?.id ?? null;
     set({ activeEnvironmentId: envId });
@@ -246,6 +254,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!workspaceId) return set({ environments: [] });
     const environments = await environmentsApi.list(workspaceId);
     set({ environments });
+  },
+
+  refreshDbConnections: async () => {
+    const workspaceId = get().currentWorkspaceId;
+    if (!workspaceId) return set({ dbConnections: [] });
+    const dbConnections = await dbConnectionsApi.list(workspaceId);
+    set({ dbConnections });
   },
 
   setActiveEnvironment: (environmentId) => {

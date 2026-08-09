@@ -213,6 +213,7 @@ async fn run_job(client: &Arc<RunnerApi>, pool: &Arc<ClientPool>, job: JobAssign
         // 场景测试：串行执行，步骤间通过 rp.variables.set() 传递临时变量
         let mut tmp_vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         let base_variables = job.variables;
+        let db_connections = job.db_connections;
         let mut succeeded = 0usize;
         let mut failed = 0usize;
 
@@ -223,8 +224,12 @@ async fn run_job(client: &Arc<RunnerApi>, pool: &Arc<ClientPool>, job: JobAssign
                 merged.insert(format!("tmp.{k}"), v.clone());
             }
 
+            let ctx = exec::ExecContext {
+                db_connections: Some(&db_connections),
+                ..Default::default()
+            };
             let mut result =
-                exec::execute(pool, &item.name, item.item_id, &item.request, &merged).await;
+                exec::execute_with(pool, &ctx, &item.name, item.item_id, &item.request, &merged).await;
             result.case_id = item.case_id;
             log_result(&result);
             let ok = result.ok;
@@ -266,17 +271,23 @@ async fn run_job(client: &Arc<RunnerApi>, pool: &Arc<ClientPool>, job: JobAssign
     // 普通任务：并发执行
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let variables = Arc::new(job.variables);
+    let db_connections = Arc::new(job.db_connections);
     let mut tasks = Vec::with_capacity(job.items.len());
     for item in job.items {
         let semaphore = semaphore.clone();
         let pool = pool.clone();
         let variables = variables.clone();
+        let db_connections = db_connections.clone();
         let tx = tx.clone();
         tasks.push(tokio::spawn(async move {
             // permit 在任务结束时释放，从而保持在并发上限内
             let _permit = semaphore.acquire().await.ok();
+            let ctx = exec::ExecContext {
+                db_connections: Some(&db_connections),
+                ..Default::default()
+            };
             let mut result =
-                exec::execute(&pool, &item.name, item.item_id, &item.request, &variables).await;
+                exec::execute_with(&pool, &ctx, &item.name, item.item_id, &item.request, &variables).await;
             // 用例作为独立执行项时回填 caseId（服务端按此聚合用例结果）
             result.case_id = item.case_id;
             log_result(&result);
@@ -410,15 +421,21 @@ async fn run_once(args: RunArgs) -> anyhow::Result<bool> {
     let pool = Arc::new(ClientPool::new(&format!("RabbitPostRunner/{VERSION}")));
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let variables = Arc::new(job.variables);
+    let db_connections = Arc::new(job.db_connections);
     let mut tasks = Vec::with_capacity(job.items.len());
     for item in job.items {
         let semaphore = semaphore.clone();
         let pool = pool.clone();
         let variables = variables.clone();
+        let db_connections = db_connections.clone();
         tasks.push(tokio::spawn(async move {
             let _permit = semaphore.acquire().await.ok();
+            let ctx = exec::ExecContext {
+                db_connections: Some(&db_connections),
+                ..Default::default()
+            };
             let mut result =
-                exec::execute(&pool, &item.name, item.item_id, &item.request, &variables).await;
+                exec::execute_with(&pool, &ctx, &item.name, item.item_id, &item.request, &variables).await;
             result.case_id = item.case_id;
             log_result(&result);
             result.ok

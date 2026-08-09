@@ -6,6 +6,9 @@ import crypto from "node:crypto";
 import { eq } from "drizzle-orm";
 import type {
   ConsoleLogEntry,
+  DbExtraction,
+  DbOperation,
+  DbQueryResult,
   EnvironmentVariable,
   ExecuteRequestInput,
   ExecuteResult,
@@ -19,7 +22,9 @@ import type {
 import { resolveRequestSettings, substituteVariables } from "@rabbitpost/shared";
 import { normalizeRequestAuth } from "@rabbitpost/shared";
 import { db } from "../db";
-import { collectionItems, collections, environments, histories } from "../db/schema";
+import { collectionItems, collections, environments, histories, workspaces } from "../db/schema";
+import { createDbExecutor, isSelectStatement, type DbExecutor } from "./db-client";
+import { loadWorkspaceDbConnections } from "./db-connections";
 import { findHeader, sendRequest, type SendRequestOptions } from "./http-client";
 import { runUserScript } from "./pm-sandbox";
 import { applyAuth, parseDigestChallenge } from "./request-auth";
@@ -135,6 +140,21 @@ async function loadEnvironmentVariables(
   if (!envRow || envRow.workspaceId !== workspaceId) return {};
   const vars: VariableMap = {};
   for (const v of envRow.variables as EnvironmentVariable[]) {
+    if (v.enabled && v.key) vars[v.key] = v.value;
+  }
+  return vars;
+}
+
+/** Workspace 级全局变量（优先级最低，Collection / Environment 同名覆盖） */
+async function loadWorkspaceVariables(workspaceId: string): Promise<VariableMap> {
+  const [ws] = await db
+    .select({ variables: workspaces.variables })
+    .from(workspaces)
+    .where(eq(workspaces.id, workspaceId))
+    .limit(1);
+  if (!ws?.variables) return {};
+  const vars: VariableMap = {};
+  for (const v of ws.variables as KeyValueItem[]) {
     if (v.enabled && v.key) vars[v.key] = v.value;
   }
   return vars;
@@ -405,6 +425,108 @@ function buildRequest(
   };
 }
 
+/**
+ * 声明式 db 操作的结果提取（对标 Apifox）：
+ * rows=全部行(JSON) / row=首行(JSON) / row.<col>=首行某列标量 / value=Redis 返回值
+ */
+export function extractDbValue(
+  source: DbExtraction["source"],
+  queryResult?: DbQueryResult,
+  redisValue?: unknown,
+): string {
+  if (source === "rows") return JSON.stringify(queryResult?.rows ?? []);
+  if (source === "row") return JSON.stringify(queryResult?.rows?.[0] ?? null);
+  if (source.startsWith("row.")) {
+    const value = queryResult?.rows?.[0]?.[source.slice(4)];
+    if (value === undefined || value === null) return "";
+    return typeof value === "string" ? value : String(value);
+  }
+  // redis value
+  if (redisValue === undefined || redisValue === null) return "";
+  return typeof redisValue === "string" ? redisValue : JSON.stringify(redisValue);
+}
+
+/**
+ * 执行声明式数据库操作（db.pre / db.post）。
+ * 失败不中断请求：错误写入 consoleLogs（与脚本错误同一通道），继续后续步骤。
+ */
+async function runDbOperations(
+  ops: DbOperation[],
+  phase: "pre" | "post",
+  dbExecutor: DbExecutor | undefined,
+  vars: VariableMap,
+  consoleLogs: ConsoleLogEntry[],
+): Promise<VariableMap> {
+  const out: VariableMap = { ...vars };
+  for (const op of ops) {
+    const label = `[db:${phase}] ${op.connection}`;
+    try {
+      if (!dbExecutor) throw new Error("no database connections configured");
+      const statement = substituteVariables(op.statement, out);
+      const params = op.params?.map((p) => substituteVariables(p, out));
+      if (op.kind === "redis") {
+        const [command, ...args] = statement.split(/\s+/).filter(Boolean);
+        if (!command) throw new Error("empty redis command");
+        const value = await dbExecutor.redis(op.connection, command, args);
+        consoleLogs.push({ level: "log", args: [`${label} ${command} ok`] });
+        for (const ext of op.extract ?? []) {
+          out[ext.variable] = extractDbValue(ext.source, undefined, value);
+        }
+      } else if (op.kind === "mongo") {
+        // statement 为 MongoDB runCommand 的 JSON 命令串
+        let command: Record<string, unknown>;
+        try {
+          command = JSON.parse(statement) as Record<string, unknown>;
+        } catch {
+          throw new Error("mongo statement is not valid JSON");
+        }
+        if (!command || typeof command !== "object" || Array.isArray(command)) {
+          throw new Error("mongo statement must be a JSON object");
+        }
+        const value = await dbExecutor.mongo(op.connection, command);
+        consoleLogs.push({ level: "log", args: [`${label} mongo ok`] });
+        // extract 语义对齐 SQL：单个 doc → rows=[doc]；含 cursor.firstBatch → 取该数组
+        const doc =
+          value && typeof value === "object" && !Array.isArray(value)
+            ? (value as Record<string, unknown>)
+            : { value };
+        const firstBatch = (doc.cursor as Record<string, unknown> | undefined)?.firstBatch;
+        const rows = Array.isArray(firstBatch)
+          ? (firstBatch as Record<string, unknown>[])
+          : [doc];
+        const res: DbQueryResult = { rows, rowCount: rows.length };
+        for (const ext of op.extract ?? []) {
+          out[ext.variable] =
+            ext.source === "value"
+              ? extractDbValue("value", undefined, value)
+              : extractDbValue(ext.source, res);
+        }
+      } else if (isSelectStatement(statement)) {
+        const res = await dbExecutor.query(op.connection, statement, params);
+        consoleLogs.push({
+          level: "log",
+          args: [
+            `${label} query ok, rowCount=${res.rowCount}${res.truncated ? " (truncated)" : ""}`,
+          ],
+        });
+        for (const ext of op.extract ?? []) {
+          out[ext.variable] = extractDbValue(ext.source, res);
+        }
+      } else {
+        const res = await dbExecutor.exec(op.connection, statement, params);
+        consoleLogs.push({
+          level: "log",
+          args: [`${label} exec ok, affectedRows=${res.affectedRows}`],
+        });
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      consoleLogs.push({ level: "error", args: [`${label} ${message}`] });
+    }
+  }
+  return out;
+}
+
 export async function executeRequest(
   input: ExecuteRequestInput,
   userId: string,
@@ -413,46 +535,73 @@ export async function executeRequest(
   const consoleLogs: ConsoleLogEntry[] = [];
   const startedAt = Date.now();
 
-  // 1. 变量：Collection 级为底，Environment 覆盖（与 Postman 优先级一致）
+  // 1. 变量：globals 垫底，Collection 覆盖，Environment 最高（与 Postman 优先级一致）
+  const globalVars = await loadWorkspaceVariables(input.workspaceId);
   const collectionVars = await loadCollectionVariables(input.itemId);
   const envVars = await loadEnvironmentVariables(input.environmentId, input.workspaceId);
-  let vars: VariableMap = { ...collectionVars, ...envVars };
+  let vars: VariableMap = { ...globalVars, ...collectionVars, ...envVars };
+  // rp.globals 作用域（脚本内 set/unset 仅当次执行生效，不持久化）
+  let globals: VariableMap = { ...globalVars };
 
   // 2. 变量替换
   let config = substituteConfig(input.request, vars);
 
-  // 3. pre-request 脚本
-  if (input.request.scripts.preRequest?.trim()) {
-    const pre = runUserScript({
-      code: input.request.scripts.preRequest,
-      phase: "pre-request",
-      variables: vars,
-      request: {
-        method: config.method,
-        url: config.url,
-        headers: enabledToMap(config.headers),
-      },
-    });
-    testResults.push(...pre.testResults);
-    consoleLogs.push(...pre.consoleLogs);
-    vars = pre.variables;
-    if (pre.request) {
-      // 脚本改写后的请求不再做变量替换（与 Postman 行为一致）
-      config = {
-        ...config,
-        method: (pre.request.method as RequestConfig["method"]) ?? config.method,
-        url: pre.request.url,
-        headers: Object.entries(pre.request.headers).map(([key, value]) => ({
-          id: key,
-          key,
-          value,
-          enabled: true,
-        })),
-      };
-    }
-  }
+  // 数据库连接：优先用调用方随请求下发的明文（local-agent 路径），
+  // 否则按 workspace 从 db_connections 加载并解密，应用当前环境的 envOverrides
+  const resolvedConnections =
+    input.dbConnections ??
+    (await loadWorkspaceDbConnections(input.workspaceId, input.environmentId));
+  const dbExecutor =
+    resolvedConnections.length > 0 ? createDbExecutor(resolvedConnections) : undefined;
 
-  // 4. 发送请求
+  try {
+    // 3. db.pre（在 pre-request 脚本之前）
+    if (input.request.dbOperations?.pre?.length) {
+      vars = await runDbOperations(
+        input.request.dbOperations.pre,
+        "pre",
+        dbExecutor,
+        vars,
+        consoleLogs,
+      );
+    }
+
+    // 4. pre-request 脚本
+    if (input.request.scripts.preRequest?.trim()) {
+      const pre = await runUserScript({
+        code: input.request.scripts.preRequest,
+        phase: "pre-request",
+        variables: vars,
+        globals,
+        db: dbExecutor,
+        request: {
+          method: config.method,
+          url: config.url,
+          headers: enabledToMap(config.headers),
+        },
+      });
+      testResults.push(...pre.testResults);
+      consoleLogs.push(...pre.consoleLogs);
+      // 脚本改写的 globals 并入当次执行的变量表（仍保持 environment/collection 优先）
+      globals = pre.globals;
+      vars = { ...globals, ...pre.variables };
+      if (pre.request) {
+        // 脚本改写后的请求不再做变量替换（与 Postman 行为一致）
+        config = {
+          ...config,
+          method: (pre.request.method as RequestConfig["method"]) ?? config.method,
+          url: pre.request.url,
+          headers: Object.entries(pre.request.headers).map(([key, value]) => ({
+            id: key,
+            key,
+            value,
+            enabled: true,
+          })),
+        };
+      }
+    }
+
+    // 5. 发送请求
   let result: ExecuteResult;
   const settings = resolveRequestSettings(config.settings);
   try {
@@ -518,12 +667,25 @@ export async function executeRequest(
       consoleLogs,
     };
 
-    // 5. test 脚本
+    // 6. db.post（响应返回后、test 脚本之前）
+    if (input.request.dbOperations?.post?.length) {
+      vars = await runDbOperations(
+        input.request.dbOperations.post,
+        "post",
+        dbExecutor,
+        vars,
+        consoleLogs,
+      );
+    }
+
+    // 7. test 脚本
     if (input.request.scripts.test?.trim()) {
-      const post = runUserScript({
+      const post = await runUserScript({
         code: input.request.scripts.test,
         phase: "test",
         variables: vars,
+        globals,
+        db: dbExecutor,
         response: {
           code: sent.response.status,
           status: sent.response.statusText,
@@ -547,33 +709,37 @@ export async function executeRequest(
     };
   }
 
-  // 6. 写入历史（失败也记录，保留现场）
-  try {
-    await db.insert(histories).values({
-      workspaceId: input.workspaceId,
-      userId,
-      name: input.name ?? null,
-      request: input.request,
-      response: result.ok
-        ? {
-            status: result.status!,
-            statusText: result.statusText ?? "",
-            sizeBytes: result.sizeBytes ?? 0,
-            durationMs: result.durationMs ?? 0,
-            headers: result.headers,
-            bodyText: result.bodyText,
-            bodyBase64: result.bodyBase64,
-            cookies: result.cookies,
-            testResults: result.testResults,
-            consoleLogs: result.consoleLogs,
-          }
-        : null,
-      error: result.ok ? null : (result.error ?? "unknown error"),
-    });
-  } catch (historyErr) {
-    // 历史写入失败不影响主流程，仅日志
-    console.error("[execute] failed to persist history:", historyErr);
-  }
+    // 8. 写入历史（失败也记录，保留现场）
+    try {
+      await db.insert(histories).values({
+        workspaceId: input.workspaceId,
+        userId,
+        name: input.name ?? null,
+        request: input.request,
+        response: result.ok
+          ? {
+              status: result.status!,
+              statusText: result.statusText ?? "",
+              sizeBytes: result.sizeBytes ?? 0,
+              durationMs: result.durationMs ?? 0,
+              headers: result.headers,
+              bodyText: result.bodyText,
+              bodyBase64: result.bodyBase64,
+              cookies: result.cookies,
+              testResults: result.testResults,
+              consoleLogs: result.consoleLogs,
+            }
+          : null,
+        error: result.ok ? null : (result.error ?? "unknown error"),
+      });
+    } catch (historyErr) {
+      // 历史写入失败不影响主流程，仅日志
+      console.error("[execute] failed to persist history:", historyErr);
+    }
 
-  return result;
+    return result;
+  } finally {
+    // 每次执行结束统一关闭本请求周期内建立的连接池
+    await dbExecutor?.close();
+  }
 }

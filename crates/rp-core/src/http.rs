@@ -120,6 +120,17 @@ impl HttpClient {
         self.send(&url, req).await
     }
 
+    /// 带请求体的 DELETE（成员移除等少数接口使用）
+    pub async fn delete_with_body<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> anyhow::Result<T> {
+        let url = format!("{}{}", self.base, path);
+        let req = self.http.delete(&url).bearer_auth(&self.token).json(body);
+        self.send(&url, req).await
+    }
+
     /// 流式 GET：返回未消费的响应（调用方自行 bytes_stream 读流）。
     /// 非 2xx 时读取错误信封并原文透传。
     pub async fn get_stream(&self, path: &str) -> anyhow::Result<reqwest::Response> {

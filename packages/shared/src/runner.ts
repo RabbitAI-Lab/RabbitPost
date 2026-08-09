@@ -2,7 +2,7 @@
  * Runner / CLI 契约：团队级 Runner 注册与任务下发、CLI 执行报告上传。
  * 管理端（Web/Session）与 Runner 端（Bearer Token）、CLI 端（API Key）共用同一批类型。
  */
-import type { ConsoleLogEntry, EnvironmentVariable, RequestConfig, TestResult } from "./index";
+import type { ConsoleLogEntry, EnvironmentVariable, RequestConfig, ResolvedDbConnection, TestResult } from "./index";
 
 /** Runner 状态；disabled 的 Runner 不再被派发任务 */
 export const RUNNER_STATUSES = ["active", "disabled"] as const;
@@ -147,6 +147,8 @@ export interface RunnerJobAssignment {
   targetName: string;
   concurrency: number;
   variables: Record<string, string>;
+  /** 已解析的数据库连接（含明文密码，与 variables 同级下发；Runner 侧用于 dbOperations 与 rp.db） */
+  dbConnections?: ResolvedDbConnection[];
   items: RunnerJobItem[];
 }
 

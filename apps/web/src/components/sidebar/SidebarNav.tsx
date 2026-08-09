@@ -1,5 +1,6 @@
 import {
   ApiOutlined,
+  DatabaseOutlined,
   FileAddOutlined,
   FileTextOutlined,
   FolderAddOutlined,
@@ -21,6 +22,7 @@ import { useAppStore } from "../../stores/app";
 import { useTabsStore } from "../../stores/tabs";
 import ChevronIcon from "../common/ChevronIcon";
 import CollectionsPanel from "./CollectionsPanel";
+import DbConnectionsPanel, { createDefaultDbConnection } from "./DbConnectionsPanel";
 import DocumentsPanel from "./DocumentsPanel";
 import EnvironmentsPanel from "./EnvironmentsPanel";
 import HistoryPanel from "./HistoryPanel";
@@ -29,11 +31,12 @@ import NewCollectionModal from "./NewCollectionModal";
 import NewSpecModal from "./NewSpecModal";
 import SpecsPanel from "./SpecsPanel";
 
-type NavKey = "collections" | "environments" | "documents" | "specs";
+type NavKey = "collections" | "environments" | "databases" | "documents" | "specs";
 
 const NAV_ITEMS: { key: NavKey; label: string }[] = [
   { key: "collections", label: "Collections" },
   { key: "environments", label: "Environments" },
+  { key: "databases", label: "Databases" },
   { key: "documents", label: "Documents" },
   { key: "specs", label: "Specs" },
 ];
@@ -41,6 +44,7 @@ const NAV_ITEMS: { key: NavKey; label: string }[] = [
 // Collections / Documents 面板需要额外 prop（search / visible），在 JSX 中单独渲染
 const PANELS = {
   environments: <EnvironmentsPanel />,
+  databases: <DbConnectionsPanel />,
   specs: <SpecsPanel />,
 } as const;
 
@@ -75,6 +79,7 @@ export default function SidebarNav() {
   const [expanded, setExpanded] = useState<Record<NavKey, boolean>>({
     collections: true,
     environments: false,
+    databases: false,
     documents: false,
     specs: false,
   });
@@ -190,6 +195,17 @@ export default function SidebarNav() {
         label: "Environment",
         disabled: !currentWorkspaceId,
         onClick: () => void handleNewEnvironment(),
+      },
+      {
+        key: "database",
+        icon: <DatabaseOutlined />,
+        label: "Database",
+        disabled: !currentWorkspaceId,
+        onClick: () => {
+          if (!currentWorkspaceId) return;
+          expand("databases");
+          void createDefaultDbConnection(currentWorkspaceId);
+        },
       },
       {
         key: "document",

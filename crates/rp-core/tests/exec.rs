@@ -387,3 +387,145 @@ async fn redirect_follow_policy_is_respected() {
     .await;
     assert_eq!(not_followed.status, Some(302));
 }
+
+// ---------------------------------------------------------------------------
+// 声明式数据库操作（dbOperations.pre/post）端到端：sqlite 文件库 + wiremock HTTP
+// ---------------------------------------------------------------------------
+
+fn sqlite_file_connection(name: &str, path: &std::path::Path) -> serde_json::Value {
+    json!({
+        "name": name,
+        "config": { "type": "sqlite", "filepath": path.to_string_lossy() }
+    })
+}
+
+fn temp_db_path(tag: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("rp-exec-test-{tag}-{}.db", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    path
+}
+
+#[tokio::test]
+async fn db_operations_pre_post_extract_into_variables_and_scripts() {
+    use rp_core::exec::{execute_with, ExecContext};
+    use rp_core::model::ResolvedDbConnection;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/user"))
+        .and(header("x-uid", "7"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true})))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let path = temp_db_path("ops");
+    let connections: Vec<ResolvedDbConnection> =
+        serde_json::from_value(json!([sqlite_file_connection("db", &path)])).unwrap();
+
+    let pool = ClientPool::new("test-agent");
+    let ctx = ExecContext {
+        db_connections: Some(&connections),
+        ..Default::default()
+    };
+    let result = execute_with(
+        &pool,
+        &ctx,
+        "db-ops",
+        None,
+        &cfg(json!({
+            "method": "GET",
+            "url": format!("{}/user", server.uri()),
+            "headers": [{ "key": "x-uid", "value": "{{uid}}", "enabled": true }],
+            "dbOperations": {
+                "pre": [
+                    { "id": "1", "connection": "db", "kind": "sql",
+                      "statement": "CREATE TABLE users (id INTEGER, name TEXT)" },
+                    { "id": "2", "connection": "db", "kind": "sql",
+                      "statement": "INSERT INTO users VALUES (?, ?)", "params": ["7", "alice"] },
+                    { "id": "3", "connection": "db", "kind": "sql",
+                      "statement": "SELECT id, name FROM users WHERE id = {{uid}}",
+                      "extract": [
+                        { "variable": "userName", "source": "row.name" },
+                        { "variable": "userRow", "source": "row" }
+                      ] }
+                ],
+                "post": [
+                    { "id": "4", "connection": "db", "kind": "sql",
+                      "statement": "UPDATE users SET name = ? WHERE id = 7", "params": ["bob"] }
+                ]
+            },
+            "scripts": {
+                "test": r#"
+                    rp.test("提取的变量可见", () => {
+                        rp.expect(rp.environment.get("userName")).to.equal("alice");
+                        rp.expect(JSON.parse(rp.environment.get("userRow")).id).to.equal(7);
+                    });
+                    // 脚本内 rp.db 与声明式步骤共用同一注册表（看到 post 更新后的数据）
+                    const res = await rp.db.query("db", "SELECT name FROM users WHERE id = 7");
+                    rp.test("post 更新已生效", () => { rp.expect(res.rows[0].name).to.equal("bob"); });
+                "#
+            }
+        })),
+        &HashMap::from([("uid".to_string(), "7".to_string())]),
+    )
+    .await;
+
+    assert!(result.ok, "{result:?}");
+    let tests = result.test_results.unwrap();
+    assert!(tests.iter().all(|t| t.passed), "{tests:?}");
+    let logs = result.console_logs.unwrap();
+    // pre/post 操作日志进 console（log 级，与服务端 executor.ts 一致）
+    assert!(logs.iter().any(|l| l.args[0].contains("[db:pre] db query ok, rowCount=1")), "{logs:?}");
+    assert!(logs.iter().any(|l| l.args[0].contains("[db:post] db exec ok, affectedRows=1")), "{logs:?}");
+    assert!(logs.iter().all(|l| l.level == "log"), "{logs:?}");
+    let _ = std::fs::remove_file(&path);
+}
+
+#[tokio::test]
+async fn db_operation_failure_does_not_abort_request() {
+    use rp_core::exec::{execute_with, ExecContext};
+    use rp_core::model::ResolvedDbConnection;
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/ok"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // 引用了不存在的连接：操作失败进 console error，请求照常
+    let connections: Vec<ResolvedDbConnection> = serde_json::from_value(json!([
+        sqlite_file_connection("db", &temp_db_path("fail"))
+    ]))
+    .unwrap();
+    let pool = ClientPool::new("test-agent");
+    let ctx = ExecContext {
+        db_connections: Some(&connections),
+        ..Default::default()
+    };
+    let result = execute_with(
+        &pool,
+        &ctx,
+        "db-ops-fail",
+        None,
+        &cfg(json!({
+            "method": "GET",
+            "url": format!("{}/ok", server.uri()),
+            "dbOperations": {
+                "pre": [
+                    { "id": "1", "connection": "missing", "kind": "sql", "statement": "SELECT 1" }
+                ]
+            }
+        })),
+        &no_vars(),
+    )
+    .await;
+
+    assert!(result.ok, "{result:?}");
+    let logs = result.console_logs.unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0].level, "error");
+    assert!(logs[0].args[0].contains("missing"), "{:?}", logs[0]);
+}

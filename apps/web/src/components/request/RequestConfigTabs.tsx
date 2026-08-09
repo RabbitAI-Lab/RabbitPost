@@ -30,6 +30,7 @@ import VarTextArea from "../common/variable/VarTextArea";
 import AuthEditor from "./AuthEditor";
 import CasesPanel from "./CasesPanel";
 import CookieManagerModal from "./CookieManagerModal";
+import DbOperationsEditor from "./DbOperationsEditor";
 import RequestSettingsEditor from "./RequestSettingsEditor";
 import ScriptSnippets from "./ScriptSnippets";
 
@@ -815,6 +816,19 @@ export default function RequestConfigTabs({ tab }: Props) {
               ]}
             />
           ),
+        },
+        {
+          key: "database",
+          label: (
+            <TabLabel
+              text="数据库"
+              count={
+                (tab.config.dbOperations?.pre?.length ?? 0) +
+                (tab.config.dbOperations?.post?.length ?? 0)
+              }
+            />
+          ),
+          children: <DbOperationsEditor tab={tab} />,
         },
         {
           key: "settings",
