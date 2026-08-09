@@ -1,7 +1,7 @@
 import { EditOutlined, EyeOutlined, FolderOutlined, SaveOutlined } from "@ant-design/icons";
 import { App, Button, Empty, Segmented, Tabs, Typography } from "antd";
 import { useState } from "react";
-import { collectionsApi } from "../../api";
+import { collectionsApi, workspacesApi } from "../../api";
 import { useTabSaveHandler } from "../../lib/save-shortcut";
 import { findFolderTrail, isInScenarioTree } from "../../lib/tree";
 import { useAppStore } from "../../stores/app";
@@ -12,6 +12,8 @@ import {
   type FolderTab,
 } from "../../stores/tabs";
 import MarkdownEditor from "../common/MarkdownEditor";
+import CollectionDatabasePanel from "./CollectionDatabasePanel";
+import CollectionGlobalsPanel from "./CollectionGlobalsPanel";
 import CollectionRunsPanel from "./CollectionRunsPanel";
 import CollectionVariablesPanel from "./CollectionVariablesPanel";
 
@@ -34,9 +36,9 @@ function ComingSoon({ label }: { label: string }) {
 /** Collection / 文件夹详情页：第一行名称（文件夹为路径面包屑），第二行 tab 标签页 */
 export default function CollectionEditor({ tab }: Props) {
   const { message } = App.useApp();
-  const { collections, collectionTrees, refreshCollections, refreshCollectionTree } =
+  const { collections, collectionTrees, refreshCollections, refreshCollectionTree, refreshWorkspaces } =
     useAppStore();
-  const { updateDocDescription, updateCollectionVariables, markDocSaved, setSaving } =
+  const { updateDocDescription, updateCollectionVariables, updateCollectionGlobals, markDocSaved, setSaving } =
     useTabsStore();
   // Overview 编辑 / 预览模式；默认编辑
   const [mode, setMode] = useState<"edit" | "preview">("edit");
@@ -68,6 +70,12 @@ export default function CollectionEditor({ tab }: Props) {
           description: tab.description,
           variables: tab.variables,
         });
+        // 全局变量属于 Workspace，一并保存（不刷新整个 workspaces 列表时本地不会回显最新值）
+        const workspaceId = collections.find((c) => c.id === tab.collectionId)?.workspaceId;
+        if (workspaceId) {
+          await workspacesApi.update(workspaceId, { variables: tab.globals });
+          await refreshWorkspaces();
+        }
         await refreshCollections();
       } else {
         await collectionsApi.updateItem(tab.itemId, {
@@ -142,9 +150,9 @@ export default function CollectionEditor({ tab }: Props) {
         activeKey={activeKey}
         onChange={setActiveKey}
         tabBarExtraContent={{
-          // 编辑/预览与保存仅服务 Overview / Variables；其它 tab 不展示
+          // 编辑/预览与保存仅服务 Overview / Variables / 全局变量；其它 tab 不展示
           right:
-            activeKey === "overview" || activeKey === "variables" ? (
+            activeKey === "overview" || activeKey === "variables" || activeKey === "globals" ? (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 {activeKey === "overview" ? (
                   <Segmented
@@ -196,7 +204,7 @@ export default function CollectionEditor({ tab }: Props) {
                 },
               ]
             : []),
-          // Variables / Runs 仅 Collection 有
+          // Variables / 全局变量 / 数据库管理 / Runs 仅 Collection 有
           ...(tab.kind === "collection"
             ? [
                 {
@@ -208,6 +216,21 @@ export default function CollectionEditor({ tab }: Props) {
                       onChange={(variables) => updateCollectionVariables(tab.key, variables)}
                     />
                   ),
+                },
+                {
+                  key: "globals",
+                  label: "全局变量",
+                  children: (
+                    <CollectionGlobalsPanel
+                      variables={tab.globals}
+                      onChange={(globals) => updateCollectionGlobals(tab.key, globals)}
+                    />
+                  ),
+                },
+                {
+                  key: "database",
+                  label: "数据库管理",
+                  children: <CollectionDatabasePanel />,
                 },
                 {
                   key: "runs",

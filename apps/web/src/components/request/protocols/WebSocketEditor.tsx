@@ -30,7 +30,7 @@ type ConnState = "idle" | "connecting" | "open" | "closed";
  */
 export default function WebSocketEditor({ tab }: Props) {
   const { message } = App.useApp();
-  const { currentWorkspaceId, activeEnvironmentId, environments, collections } = useAppStore();
+  const { currentWorkspaceId, activeEnvironmentId, environments, collections, workspaces } = useAppStore();
   const updateConfig = useTabsStore((s) => s.updateConfig);
   const patch = updateConfig;
 
@@ -55,6 +55,7 @@ export default function WebSocketEditor({ tab }: Props) {
       environmentId: activeEnvironmentId,
       environments,
       collectionVariables: collections.find((c) => c.id === tab.collectionId)?.variables,
+      globalVariables: workspaces.find((w) => w.id === currentWorkspaceId)?.variables,
     });
 
   const handleConnect = async () => {

@@ -50,7 +50,7 @@ function statusColor(status?: number): string {
 /** 接口用例面板：列表 + New Case / Run All / 行内 Run / Open / 重命名 / 复制 / 重置 / 删除 */
 export default function CasesPanel({ tab }: Props) {
   const { message, modal } = App.useApp();
-  const { currentWorkspaceId, activeEnvironmentId, environments, collections } = useAppStore();
+  const { currentWorkspaceId, activeEnvironmentId, environments, collections, workspaces } = useAppStore();
   const itemId = tab.itemId;
   const cases = useCasesStore((s) => (itemId ? s.byItemId[itemId] : undefined));
   const { load, upsert, remove } = useCasesStore();
@@ -101,6 +101,7 @@ export default function CasesPanel({ tab }: Props) {
         config: caseRow.request,
         itemId: tab.itemId ?? undefined, // 传入 Collection Item ID，用于 Runner 模式
         collectionVariables: collections.find((c) => c.id === tab.collectionId)?.variables,
+        globalVariables: workspaces.find((w) => w.id === currentWorkspaceId)?.variables,
       });
       const testTotal = r.testResults?.length ?? 0;
       const testPassed = (r.testResults ?? []).filter((t) => t.passed).length;

@@ -99,6 +99,7 @@ export default function CollectionRunner({ tab }: Props) {
     environments,
     collectionTrees,
     collections,
+    workspaces,
   } = useAppStore();
 
   const collectionName =
@@ -292,6 +293,7 @@ export default function CollectionRunner({ tab }: Props) {
             config: req.item.request!,
             itemId: req.item.id,
             collectionVariables: collections.find((c) => c.id === tab.collectionId)?.variables,
+            globalVariables: workspaces.find((w) => w.id === currentWorkspaceId)?.variables,
           });
           collected.push({ req, result });
 

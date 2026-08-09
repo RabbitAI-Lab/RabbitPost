@@ -76,7 +76,7 @@ function buildSchemaTree(schema: GraphQLSchema): DataNode[] {
  */
 export default function GraphQLEditor({ tab, onSend }: Props) {
   const { message } = App.useApp();
-  const { currentWorkspaceId, activeEnvironmentId, environments, collections } =
+  const { currentWorkspaceId, activeEnvironmentId, environments, collections, workspaces } =
     useAppStore();
   const updateConfig = useTabsStore((s) => s.updateConfig);
   const patch = updateConfig;
@@ -128,6 +128,7 @@ export default function GraphQLEditor({ tab, onSend }: Props) {
         itemId: tab.itemId ?? undefined,
         collectionVariables: collections.find((c) => c.id === tab.collectionId)
           ?.variables,
+        globalVariables: workspaces.find((w) => w.id === currentWorkspaceId)?.variables,
       });
       if (!result.ok || !result.bodyText) {
         throw new Error(result.error || `Introspection 失败（HTTP ${result.status ?? "?"}）`);

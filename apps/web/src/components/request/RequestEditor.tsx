@@ -46,6 +46,7 @@ export default function RequestEditor({ tab }: Props) {
     activeEnvironmentId,
     environments,
     collections,
+    workspaces,
     refreshCollectionTree,
   } = useAppStore();
   const {
@@ -87,6 +88,7 @@ export default function RequestEditor({ tab }: Props) {
         config: tab.config,
         itemId: tab.itemId ?? undefined, // 传入 Collection Item ID，用于 Runner 模式
         collectionVariables: collections.find((c) => c.id === tab.collectionId)?.variables,
+        globalVariables: workspaces.find((w) => w.id === currentWorkspaceId)?.variables,
       });
       setResponse(tab.key, result);
     } catch (e) {

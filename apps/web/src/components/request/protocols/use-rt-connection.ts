@@ -24,6 +24,8 @@ interface Args {
     dir?: "in" | "out";
     data?: string;
   }) => void;
+  /** MCP 等动作-响应协议：一次完整 out→in 往返后回调（out 帧的 action 与 in 帧的 action 匹配） */
+  onActionResult?: (outData: string, inData: string) => void;
 }
 
 /**
@@ -37,9 +39,10 @@ export function useRtConnection({
   buildConfig,
   formatMessage,
   onRawEvent,
+  onActionResult,
 }: Args) {
   const { message } = App.useApp();
-  const { currentWorkspaceId, activeEnvironmentId, environments, collections } =
+  const { currentWorkspaceId, activeEnvironmentId, environments, collections, workspaces } =
     useAppStore();
 
   const [connState, setConnState] = useState<ConnState>("idle");
@@ -51,6 +54,9 @@ export function useRtConnection({
   const settleOpenWaiters = (ok: boolean) => {
     openWaitersRef.current.splice(0).forEach((fn) => fn(ok));
   };
+
+  /** 最近一次 out 帧的 data（用于 onActionResult 匹配 in 帧） */
+  const lastOutDataRef = useRef<string | null>(null);
 
   const pushEntry = (dir: MessageLogEntry["dir"], text: string, ts?: number) => {
     setEntries((prev) => [
@@ -64,6 +70,7 @@ export function useRtConnection({
       environmentId: activeEnvironmentId,
       environments,
       collectionVariables: collections.find((c) => c.id === tab.collectionId)?.variables,
+      globalVariables: workspaces.find((w) => w.id === currentWorkspaceId)?.variables,
     });
 
   const connect = async () => {
@@ -109,6 +116,22 @@ export function useRtConnection({
             }
           } else if (ev.type === "message") {
             onRawEvent?.({ type: "message", dir: ev.dir, data: ev.data });
+            // 动作-响应配对：out 帧记录 data，in 帧到达时触发 onActionResult
+            if (onActionResult) {
+              if (ev.dir === "out" && ev.data) {
+                lastOutDataRef.current = ev.data;
+              } else if (ev.dir === "in" && ev.data && lastOutDataRef.current) {
+                // 检查 action 是否匹配（MCP 帧格式：{"action":"...","result|error":...}）
+                try {
+                  const outFrame = JSON.parse(lastOutDataRef.current) as { action?: string };
+                  const inFrame = JSON.parse(ev.data) as { action?: string };
+                  if (outFrame.action && outFrame.action === inFrame.action) {
+                    onActionResult(lastOutDataRef.current, ev.data);
+                    lastOutDataRef.current = null;
+                  }
+                } catch { /* 非 JSON 帧不匹配 */ }
+              }
+            }
             const text = formatMessage
               ? formatMessage(ev.dir!, ev.data ?? "", ev.encoding ?? "text")
               : ev.encoding === "base64"
